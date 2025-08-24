@@ -1,0 +1,6 @@
+# Top-level defaults for a run
+defaults:
+  - algo: dp/value_iteration
+  - env: tabular/toy2state
+  - train: default
+  - log: default

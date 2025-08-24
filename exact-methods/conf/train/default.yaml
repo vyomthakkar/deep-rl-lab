@@ -1,0 +1,4 @@
+# Training/runtime knobs not specific to any algo/env
+seed: 0
+eval_every: 10      # iterations
+device: cpu         # (tabular = CPU)

@@ -1,0 +1,9 @@
+# Logging destinations; flip flags as you wire them up
+save_dir: runs
+tensorboard: false
+wandb:
+  enabled: false
+  project: deep-rl-stack
+  entity: null
+  run_name: null
+csv: true

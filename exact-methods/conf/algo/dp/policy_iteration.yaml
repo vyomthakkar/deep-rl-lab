@@ -1,0 +1,4 @@
+# Policy Iteration defaults
+name: policy_iteration
+eval_tol: 1e-10         # tolerance for iterative policy evaluation
+max_eval_iters: 10000   # cap for inner evaluation loop

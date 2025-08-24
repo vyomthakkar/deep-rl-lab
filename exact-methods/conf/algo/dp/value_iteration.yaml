@@ -1,0 +1,5 @@
+# Value Iteration defaults
+name: value_iteration
+tol: 1e-8
+max_iters: 1000
+# gamma comes from the env (part of the MDP); don't duplicate it here.
