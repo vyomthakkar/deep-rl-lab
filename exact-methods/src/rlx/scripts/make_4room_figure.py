@@ -6,6 +6,11 @@ from typing import Tuple, List
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+### How to run: 
+# cd /Users/vyomthakkar/Downloads/deep-rl-practice/exact-methods
+# PYTHONPATH=src python -m rlx.scripts.make_4room_figure --outfile runs/figs/4room_vi.png
+
 # Env + algo
 from rlx.envs.tabular.gridworld import build_4room
 try:
