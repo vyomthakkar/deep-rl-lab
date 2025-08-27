@@ -5,6 +5,7 @@ import re
 from typing import Tuple, List
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 
 
 ### How to run: 
@@ -51,14 +52,30 @@ def value_grid_from_V(V: np.ndarray, state_names: List[str], shape: Tuple[int, i
 
 # ----- plotting -----
 
-def plot_values_and_policy(mdp, V: np.ndarray, Q: np.ndarray, pi: np.ndarray, outfile: str, title: str = ""):
+def plot_values_and_policy(
+    mdp,
+    V: np.ndarray,
+    Q: np.ndarray,
+    pi: np.ndarray,
+    outfile: str,
+    title: str = "",
+    annotate: bool = False,
+    decimals: int = 2,
+    annotate_fontsize: int = 8,
+    annotate_contrast: bool = True,
+    annotate_box_alpha: float = 0.0,
+    arrow_alpha: float = 0.9,
+    hide_arrows_on_annotate: bool = False,
+    fig_scale: float = 0.6,
+    dpi: int = 140,
+):
     shape = tuple(mdp.extras.get("shape", ()))
     walls = set(map(tuple, mdp.extras.get("walls", [])))
     h, w = shape
 
     gridV = value_grid_from_V(V, mdp.state_names, shape, walls)
 
-    fig, ax = plt.subplots(figsize=(w * 0.6, h * 0.6), dpi=140)
+    fig, ax = plt.subplots(figsize=(w * fig_scale, h * fig_scale), dpi=dpi)
 
     # Heatmap of values; NaNs (walls) masked out
     im = ax.imshow(gridV, interpolation="nearest", origin="upper")
@@ -75,30 +92,58 @@ def plot_values_and_policy(mdp, V: np.ndarray, Q: np.ndarray, pi: np.ndarray, ou
     terminals_rc = {parse_state_rc(mdp.state_names[i]) for i in terminals_idx}
 
     # Quiver arrows for greedy actions
-    xs, ys, us, vs = [], [], [], []
-    for i, name in enumerate(mdp.state_names):
-        r, c = parse_state_rc(name)
-        if (r, c) in walls:
-            continue
-        if (r, c) in terminals_rc:
-            continue  # no arrow on terminal
-        a = int(pi[i])
-        u, v = ARROW_VECS[a]
-        xs.append(c); ys.append(r)
-        us.append(u); vs.append(v)
+    if not (hide_arrows_on_annotate and annotate):
+        xs, ys, us, vs = [], [], [], []
+        for i, name in enumerate(mdp.state_names):
+            r, c = parse_state_rc(name)
+            if (r, c) in walls:
+                continue
+            if (r, c) in terminals_rc:
+                continue  # no arrow on terminal
+            a = int(pi[i])
+            u, v = ARROW_VECS[a]
+            xs.append(c); ys.append(r)
+            us.append(u); vs.append(v)
 
-    # Put arrows at cell centers; invert y so (0,0) is top-left like the grid indices
-    ax.quiver(
-        np.array(xs), np.array(ys),
-        np.array(us), np.array(vs),
-        angles="xy", scale_units="xy", scale=2.5, width=0.012, headwidth=3, headlength=4
-    )
+        # Put arrows at cell centers; invert y so (0,0) is top-left like the grid indices
+        ax.quiver(
+            np.array(xs), np.array(ys),
+            np.array(us), np.array(vs),
+            angles="xy", scale_units="xy", scale=2.5, width=0.012, headwidth=3, headlength=4,
+            alpha=arrow_alpha, zorder=2
+        )
     ax.set_xlim(-0.5, w - 0.5)
     ax.set_ylim(h - 0.5, -0.5)  # invert to align with matrix indexing
     ax.set_xticks(range(w)); ax.set_yticks(range(h))
     ax.set_xticklabels([]); ax.set_yticklabels([])
     ax.set_aspect("equal")
     ax.grid(which="both", color=(0,0,0,0.15), linewidth=0.5)
+
+    # Annotate V(s) values if requested
+    if annotate:
+        for r in range(h):
+            for c in range(w):
+                val = gridV[r, c]
+                if np.isnan(val):
+                    continue
+                text_color = "black"
+                if annotate_contrast:
+                    rgba = im.cmap(im.norm(val))
+                    rr, gg, bb, _ = rgba
+                    # Perceptual luminance for contrast selection
+                    luminance = 0.299 * rr + 0.587 * gg + 0.114 * bb
+                    text_color = "black" if luminance > 0.5 else "white"
+                path_effects = [pe.withStroke(linewidth=1.2, foreground=(1,1,1) if text_color=="black" else (0,0,0))]
+                bbox = None
+                if annotate_box_alpha and annotate_box_alpha > 0.0:
+                    bbox = dict(boxstyle="round,pad=0.2", fc=(1,1,1, annotate_box_alpha), ec="none")
+                ax.text(
+                    c, r, f"{val:.{decimals}f}",
+                    ha="center", va="center",
+                    fontsize=annotate_fontsize, color=text_color,
+                    fontweight="semibold", zorder=3,
+                    path_effects=path_effects, bbox=bbox,
+                )
 
     # mark terminals
     for (r, c) in terminals_rc:
@@ -126,6 +171,17 @@ def main():
     parser.add_argument("--max_iters", type=int, default=2000)
     parser.add_argument("--tol", type=float, default=1e-8)
     parser.add_argument("--outfile", type=str, default="runs/figs/4room_vi.png")
+    parser.add_argument("--annotate", action="store_true", help="Overlay numeric V(s) on cells")
+    parser.add_argument("--print_values", action="store_true", help="Print the V-grid to stdout")
+    parser.add_argument("--save_values", type=str, default="", help="Path to save V-grid (.csv, .npy, or .npz)")
+    parser.add_argument("--decimals", type=int, default=2, help="Decimal places for display/save")
+    parser.add_argument("--annotate_fontsize", type=int, default=8, help="Font size for value labels")
+    parser.add_argument("--annotate_contrast", action="store_true", help="Auto-pick text color for contrast")
+    parser.add_argument("--annotate_box_alpha", type=float, default=0.0, help="Alpha for value label background box")
+    parser.add_argument("--arrow_alpha", type=float, default=0.9, help="Alpha for policy arrows")
+    parser.add_argument("--hide_arrows_on_annotate", action="store_true", help="Hide arrows when annotating values")
+    parser.add_argument("--fig_scale", type=float, default=0.6, help="Figure scale per grid cell")
+    parser.add_argument("--dpi", type=int, default=140, help="Figure DPI")
     args = parser.parse_args()
 
     doors = [(5,1),(1,5),(9,5),(5,9)]
@@ -158,8 +214,45 @@ def main():
     Q = q_from_v(mdp.P, mdp.R, mdp.gamma, V)
     pi = greedy_from_q(Q)
 
+    # Prepare value grid for optional printing/saving
+    shape = tuple(mdp.extras.get("shape", ()))
+    walls = set(map(tuple, mdp.extras.get("walls", [])))
+    gridV = value_grid_from_V(V, mdp.state_names, shape, walls)
+
+    if args.print_values:
+        np.set_printoptions(precision=args.decimals, suppress=False, linewidth=200)
+        print("V-grid (NaN = wall):")
+        print(gridV)
+
+    if args.save_values:
+        path = args.save_values
+        lower = path.lower()
+        if lower.endswith('.csv'):
+            fmt = f"%.{args.decimals}f"
+            np.savetxt(path, gridV, delimiter=",", fmt=fmt)
+            print(f"[saved values] {path}")
+        elif lower.endswith('.npz'):
+            np.savez_compressed(path, values=gridV)
+            print(f"[saved values] {path}")
+        else:
+            # default to .npy if not csv/npz
+            if not lower.endswith('.npy'):
+                path = path + '.npy'
+            np.save(path, gridV)
+            print(f"[saved values] {path}")
+
     title = f"4-Room Gridworld — VI (γ={args.gamma}, slip={args.slip})"
-    plot_values_and_policy(mdp, V, Q, pi, args.outfile, title)
+    plot_values_and_policy(
+        mdp, V, Q, pi, args.outfile, title,
+        annotate=args.annotate, decimals=args.decimals,
+        annotate_fontsize=args.annotate_fontsize,
+        annotate_contrast=args.annotate_contrast,
+        annotate_box_alpha=args.annotate_box_alpha,
+        arrow_alpha=args.arrow_alpha,
+        hide_arrows_on_annotate=args.hide_arrows_on_annotate,
+        fig_scale=args.fig_scale,
+        dpi=args.dpi,
+    )
 
 if __name__ == "__main__":
     main()
