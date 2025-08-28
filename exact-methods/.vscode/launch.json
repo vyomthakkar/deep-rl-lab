@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "VI: make_4room_figure",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "rlx.scripts.make_4room_figure",
+        "cwd": "${workspaceFolder}",
+        "env": { "PYTHONPATH": "src" },
+        "console": "integratedTerminal",
+        "justMyCode": true,
+        "args": [
+          "--outfile", "runs/figs/4room_vi_debug.png",
+          "--slip", "0.3",
+          "--annotate", "--decimals", "2"
+        ]
+      }
+    ]
+  }
