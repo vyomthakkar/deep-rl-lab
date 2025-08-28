@@ -12,6 +12,8 @@ import matplotlib.patheffects as pe
 # cd /Users/vyomthakkar/Downloads/deep-rl-practice/exact-methods
 # PYTHONPATH=src python -m rlx.scripts.make_4room_figure --outfile runs/figs/4room_vi.png
 
+#
+
 # Env + algo
 from rlx.envs.tabular.gridworld import build_4room
 try:
@@ -198,21 +200,54 @@ def main():
         out = run_vi(mdp, tol=args.tol, max_iters=args.max_iters, logger=None)
         if isinstance(out, dict) and "V" in out:
             V = np.asarray(out["V"], dtype=np.float64)
+            # Prefer returned Q/pi when available; otherwise derive from V
+            if "Q" in out:
+                Q = np.asarray(out["Q"], dtype=np.float64)
+            else:
+                Q = q_from_v(mdp.P, mdp.R, mdp.gamma, V)
+            if "pi" in out:
+                pi = np.asarray(out["pi"], dtype=np.int64)
+            else:
+                pi = greedy_from_q(Q)
+            # Extract iteration count/time from logs if available
+            iters_run = None
+            elapsed_sec = None
+            logs = out.get("logs", None)
+            if isinstance(logs, list) and len(logs) > 0:
+                last = logs[-1]
+                # logs use 0-based iteration indexing
+                try:
+                    iters_run = int(last.get("i", len(logs) - 1)) + 1
+                except Exception:
+                    iters_run = len(logs)
+                try:
+                    elapsed_sec = float(last.get("wall_clock_time", None))
+                except Exception:
+                    elapsed_sec = None
         else:
             V = np.asarray(out, dtype=np.float64)
+            Q = q_from_v(mdp.P, mdp.R, mdp.gamma, V)
+            pi = greedy_from_q(Q)
     else:
         # Fallback mini-VI so the script still runs if import path differs
         V = np.zeros(mdp.P.shape[0], dtype=np.float64)
         last = V.copy()
+        iters_run = 0
         for _ in range(args.max_iters):
             Q = mdp.R + mdp.gamma * (mdp.P @ V)
             V = np.max(Q, axis=1)
             if np.max(np.abs(V - last)) < args.tol:
                 break
             last = V
+            iters_run += 1
+        # Derive policy from final Q
+        pi = greedy_from_q(Q)
 
-    Q = q_from_v(mdp.P, mdp.R, mdp.gamma, V)
-    pi = greedy_from_q(Q)
+    # If Q/pi not set for any reason (safety), compute from V
+    if 'Q' not in locals():
+        Q = q_from_v(mdp.P, mdp.R, mdp.gamma, V)
+    if 'pi' not in locals():
+        pi = greedy_from_q(Q)
 
     # Prepare value grid for optional printing/saving
     shape = tuple(mdp.extras.get("shape", ()))
@@ -241,7 +276,15 @@ def main():
             np.save(path, gridV)
             print(f"[saved values] {path}")
 
+    # Compose title with convergence info if available
     title = f"4-Room Gridworld — VI (γ={args.gamma}, slip={args.slip})"
+    try:
+        if 'iters_run' in locals() and iters_run is not None:
+            title += f" — iters={int(iters_run)}"
+        if 'elapsed_sec' in locals() and elapsed_sec is not None:
+            title += f" — t={elapsed_sec:.3f}s"
+    except Exception:
+        pass
     plot_values_and_policy(
         mdp, V, Q, pi, args.outfile, title,
         annotate=args.annotate, decimals=args.decimals,
