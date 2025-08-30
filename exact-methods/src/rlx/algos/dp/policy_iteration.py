@@ -30,15 +30,19 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
     
     start_time = time.time()
     
+    outer_iter = 0
+    
     while policy_l1_change != 0:
         
         #policy evalutation
-        for i in range(max_eval_iters):
+        inner_iter = 0
+        for _ in range(max_eval_iters):
             V_next = simplified_bellman_update(pi, V, mdp.P, mdp.R, mdp.gamma)
             delta = np.max(np.abs(V_next - V)).item()
             V = V_next
             if delta < eval_tol:
                 break
+            inner_iter += 1
             
         #policy improvement
         EV = mdp.P @ V
@@ -47,6 +51,33 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
         policy_l1_change = np.sum(pi_next != pi).item()
         pi = pi_next
         
+        #monitoring metrics
+        wall_clock_time = time.time() - start_time
+        outer_iter += 1
+        
+        logs.append({
+            "outer_iter": outer_iter,
+            "inner_iter": inner_iter,
+            "delta": delta,
+            "bellman_residual": delta,
+            "policy_l1_change": policy_l1_change,
+            "entropy": 0.0,
+            "wall_clock_time": wall_clock_time
+        })
+        
+        
+    end_time = time.time()
+    run_time = end_time - start_time
+    logs.append({"run_time": run_time, "policy_l1_change": policy_l1_change})
+    
+    return {
+        "V": V,
+        "Q": Q,
+        "pi": pi,
+        "logs": logs,
+    }
+    
+
     
         
         
