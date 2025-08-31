@@ -77,7 +77,6 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         
     end_time = time.time()
     run_time = end_time - start_time
-    logs.append({"total_run_time": run_time})
     
     if logger:
         logger.info(f"Converged after {i+1} iterations")
@@ -87,7 +86,8 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         "V": V,
         "Q": Q,
         "pi": pi,
-        "logs": logs
+        "logs": logs,
+        "run_time": run_time
     }
         
         

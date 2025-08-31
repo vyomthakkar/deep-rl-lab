@@ -127,7 +127,6 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
         
     end_time = time.time()
     run_time = end_time - start_time
-    logs.append({"total_run_time": run_time})
     
     if logger:
         logger.info(f"Converged after {outer_iter} iterations")
@@ -137,6 +136,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
         "Q": Q,
         "pi": pi,
         "logs": logs,
+        "run_time": run_time,
     }
     
 
