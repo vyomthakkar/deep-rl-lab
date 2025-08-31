@@ -65,10 +65,16 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
             "wall_clock_time": wall_clock_time
         })
         
+        if logger:
+            logger.info(f"Outer iter: {outer_iter}, inner iter: {inner_iter}, delta: {delta:.2e}, policy_l1_change: {policy_l1_change}")
+        
         
     end_time = time.time()
     run_time = end_time - start_time
-    logs.append({"run_time": run_time, "policy_l1_change": policy_l1_change})
+    logs.append({"total_run_time": run_time})
+    
+    if logger:
+        logger.info(f"Converged after {outer_iter} iterations")
     
     return {
         "V": V,

@@ -42,8 +42,8 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
     assert np.allclose(mdp.P.sum(axis=-1), 1.0), "Transitions must be stochastic"
 
     num_states = len(mdp.state_names)
-    V = np.zeros(num_states)
-    pi = np.zeros(num_states)
+    V = np.zeros(num_states, dtype=np.float64)
+    pi = np.zeros(num_states, dtype=np.int64)
     logs = []
     
     start_time = time.time()
@@ -73,9 +73,15 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         pi = pi_next
         
         if delta < tol:
-            if logger:
-                logger.info(f"Converged after {i+1} iterations")
             break
+        
+    end_time = time.time()
+    run_time = end_time - start_time
+    logs.append({"total_run_time": run_time})
+    
+    if logger:
+        logger.info(f"Converged after {i+1} iterations")
+    
         
     return {
         "V": V,
