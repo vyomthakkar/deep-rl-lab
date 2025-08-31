@@ -41,7 +41,7 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
     assert 0 <= mdp.gamma < 1, "Discount must be in [0,1)"
     assert np.allclose(mdp.P.sum(axis=-1), 1.0), "Transitions must be stochastic"
 
-    num_states = len(mdp.state_names)
+    num_states = mdp.P.shape[0]
     V = np.zeros(num_states, dtype=np.float64)
     pi = np.zeros(num_states, dtype=np.int64)
     logs = []
