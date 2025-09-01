@@ -3,6 +3,8 @@ import argparse
 import json
 from typing import Any, Dict
 import numpy as np
+import os
+import sys
 
 # ------------------------------------------------------------
 # Edit these defaults in-code if you prefer not to pass CLI args
@@ -20,6 +22,11 @@ MAX_ITERS: int = 2000
 # PI params
 EVAL_TOL: float = 1e-8
 MAX_EVAL_ITERS: int = 1000
+
+# Ensure 'src' is on sys.path when running this file directly
+_SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
 
 def build_env(env: str, gamma: float, slip: float, seed: int):
