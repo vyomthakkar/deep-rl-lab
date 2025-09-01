@@ -9,7 +9,7 @@ fig-vi:
 
 fig-pi:
 	@mkdir -p runs/figs
-	@$(EXPORT) $(PYTHON) -m rlx.scripts.make_4room_figure --algo pi --slip 0.0 --eval_tol 1e-8 --max_eval_iters 1000 --outfile runs/figs/4room_pi.png
+	@$(EXPORT) $(PYTHON) -m rlx.scripts.make_4room_figure --algo pi --eval_tol 1e-8 --max_eval_iters 1000 --outfile runs/figs/4room_pi.png
 
 fig-soft:
 	@mkdir -p runs/figs
