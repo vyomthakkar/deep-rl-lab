@@ -62,7 +62,12 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
             "bellman_residual": delta,  # For VI: ||T*V - V|| = ||V_next - V||
             "policy_l1_change": policy_l1_change,
             "entropy": 0.0,  # Always 0.0 for deterministic VI policy
-            "wall_clock_time": wall_clock_time
+            "wall_clock_time": wall_clock_time,
+            # standardized fields across algos
+            "iter": int(i),
+            "algo": "vi",
+            "gamma": float(mdp.gamma),
+            "max_q": float(np.max(Q)),
         })
         
         if logger:

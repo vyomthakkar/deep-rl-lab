@@ -116,7 +116,12 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
             "bellman_residual": delta,
             "policy_l1_change": policy_l1_change,
             "entropy": 0.0,
-            "wall_clock_time": wall_clock_time
+            "wall_clock_time": wall_clock_time,
+            # standardized fields across algos
+            "iter": int(outer_iter),
+            "algo": "pi",
+            "gamma": float(mdp.gamma),
+            "max_q": float(np.max(Q)),
         })
         
         outer_iter += 1
