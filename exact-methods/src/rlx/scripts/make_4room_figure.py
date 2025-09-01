@@ -23,6 +23,18 @@ try:
 except Exception:
     HAS_RUN_VI = False
 
+try:
+    from rlx.algos.dp.policy_iteration import run_pi
+    HAS_RUN_PI = True
+except Exception:
+    HAS_RUN_PI = False
+
+try:
+    from rlx.algos.dp.soft_value_iteration import run_soft_vi
+    HAS_RUN_SOFT_VI = True
+except Exception:
+    HAS_RUN_SOFT_VI = False
+
 # ----- helpers -----
 
 ACTIONS = [(-1, 0), (0, 1), (1, 0), (0, -1)]  # U, R, D, L
@@ -162,6 +174,7 @@ def plot_values_and_policy(
 
 def main():
     parser = argparse.ArgumentParser(description="Make a 4-Room value/policy figure.")
+    parser.add_argument("--algo", type=str, default="vi", choices=["vi", "pi", "soft_vi"], help="Which algorithm to run")
     parser.add_argument("--height", type=int, default=11)
     parser.add_argument("--width", type=int, default=11)
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -170,8 +183,15 @@ def main():
     parser.add_argument("--goal_r", type=int, default=9)
     parser.add_argument("--goal_c", type=int, default=9)
     parser.add_argument("--goal_reward", type=float, default=1.0)
-    parser.add_argument("--max_iters", type=int, default=2000)
-    parser.add_argument("--tol", type=float, default=1e-8)
+    # VI controls
+    parser.add_argument("--max_iters", type=int, default=2000, help="Max iterations for VI/Soft-VI")
+    parser.add_argument("--tol", type=float, default=1e-8, help="Tolerance for VI/Soft-VI")
+    # PI controls
+    parser.add_argument("--eval_tol", type=float, default=1e-8, help="Policy-evaluation tolerance for PI")
+    parser.add_argument("--max_eval_iters", type=int, default=1000, help="Max eval sweeps per PI outer iter")
+    # Soft-VI control
+    parser.add_argument("--tau", type=float, default=0.1, help="Temperature for Soft Value Iteration")
+    # Output
     parser.add_argument("--outfile", type=str, default="runs/figs/4room_vi.png")
     parser.add_argument("--annotate", action="store_true", help="Overlay numeric V(s) on cells")
     parser.add_argument("--print_values", action="store_true", help="Print the V-grid to stdout")
@@ -195,53 +215,96 @@ def main():
         absorbing_terminals=True, seed=0
     )
 
-    # Run VI (use your implementation if available; else a tiny fallback)
-    if HAS_RUN_VI:
-        out = run_vi(mdp, tol=args.tol, max_iters=args.max_iters, logger=None)
-        if isinstance(out, dict) and "V" in out:
-            V = np.asarray(out["V"], dtype=np.float64)
-            # Prefer returned Q/pi when available; otherwise derive from V
-            if "Q" in out:
-                Q = np.asarray(out["Q"], dtype=np.float64)
+    # Select and run algorithm
+    algo = args.algo
+    iters_run = None
+    elapsed_sec = None
+
+    if algo == "vi":
+        # Run VI (use your implementation if available; else a tiny fallback)
+        if HAS_RUN_VI:
+            out = run_vi(mdp, tol=args.tol, max_iters=args.max_iters, logger=None)
+            if isinstance(out, dict) and "V" in out:
+                V = np.asarray(out["V"], dtype=np.float64)
+                # Prefer returned Q/pi when available; otherwise derive from V
+                if "Q" in out:
+                    Q = np.asarray(out["Q"], dtype=np.float64)
+                else:
+                    Q = q_from_v(mdp.P, mdp.R, mdp.gamma, V)
+                if "pi" in out:
+                    pi = np.asarray(out["pi"], dtype=np.int64)
+                else:
+                    pi = greedy_from_q(Q)
+                # Extract iteration count/time from logs if available
+                logs = out.get("logs", None)
+                if isinstance(logs, list) and len(logs) > 0:
+                    last = logs[-1]
+                    # logs use 0-based iteration indexing
+                    try:
+                        iters_run = int(last.get("i", len(logs) - 1)) + 1
+                    except Exception:
+                        iters_run = len(logs)
+                    try:
+                        elapsed_sec = float(last.get("wall_clock_time", None))
+                    except Exception:
+                        elapsed_sec = None
             else:
+                V = np.asarray(out, dtype=np.float64)
                 Q = q_from_v(mdp.P, mdp.R, mdp.gamma, V)
-            if "pi" in out:
-                pi = np.asarray(out["pi"], dtype=np.int64)
-            else:
                 pi = greedy_from_q(Q)
-            # Extract iteration count/time from logs if available
-            iters_run = None
-            elapsed_sec = None
-            logs = out.get("logs", None)
-            if isinstance(logs, list) and len(logs) > 0:
-                last = logs[-1]
-                # logs use 0-based iteration indexing
-                try:
-                    iters_run = int(last.get("i", len(logs) - 1)) + 1
-                except Exception:
-                    iters_run = len(logs)
-                try:
-                    elapsed_sec = float(last.get("wall_clock_time", None))
-                except Exception:
-                    elapsed_sec = None
         else:
-            V = np.asarray(out, dtype=np.float64)
-            Q = q_from_v(mdp.P, mdp.R, mdp.gamma, V)
+            # Fallback mini-VI so the script still runs if import path differs
+            V = np.zeros(mdp.P.shape[0], dtype=np.float64)
+            last = V.copy()
+            iters_run = 0
+            for _ in range(args.max_iters):
+                Q = mdp.R + mdp.gamma * (mdp.P @ V)
+                V = np.max(Q, axis=1)
+                if np.max(np.abs(V - last)) < args.tol:
+                    break
+                last = V
+                iters_run += 1
+            # Derive policy from final Q
             pi = greedy_from_q(Q)
+    elif algo == "pi":
+        if not HAS_RUN_PI:
+            raise RuntimeError("Policy Iteration not available (failed to import run_pi).")
+        out = run_pi(mdp, eval_tol=args.eval_tol, max_eval_iters=args.max_eval_iters, logger=None)
+        V = np.asarray(out["V"], dtype=np.float64)
+        Q = np.asarray(out.get("Q", q_from_v(mdp.P, mdp.R, mdp.gamma, V)), dtype=np.float64)
+        pi = np.asarray(out.get("pi", np.argmax(Q, axis=1)), dtype=np.int64)
+        logs = out.get("logs", None)
+        if isinstance(logs, list) and len(logs) > 0:
+            last = logs[-1]
+            try:
+                # outer_iter is 0-based
+                iters_run = int(last.get("outer_iter", len(logs) - 1)) + 1
+            except Exception:
+                iters_run = len(logs)
+            try:
+                elapsed_sec = float(last.get("wall_clock_time", None))
+            except Exception:
+                elapsed_sec = None
+    elif algo == "soft_vi":
+        if not HAS_RUN_SOFT_VI:
+            raise RuntimeError("Soft Value Iteration not available (failed to import run_soft_vi).")
+        out = run_soft_vi(mdp, tau=args.tau, tol=args.tol, max_iters=args.max_iters, logger=None)
+        V = np.asarray(out["V"], dtype=np.float64)
+        Q = np.asarray(out.get("Q", q_from_v(mdp.P, mdp.R, mdp.gamma, V)), dtype=np.float64)
+        pi = np.asarray(out.get("pi", np.argmax(Q, axis=1)), dtype=np.int64)
+        logs = out.get("logs", None)
+        if isinstance(logs, list) and len(logs) > 0:
+            last = logs[-1]
+            try:
+                iters_run = int(last.get("i", len(logs) - 1)) + 1
+            except Exception:
+                iters_run = len(logs)
+            try:
+                elapsed_sec = float(last.get("wall_clock_time", None))
+            except Exception:
+                elapsed_sec = None
     else:
-        # Fallback mini-VI so the script still runs if import path differs
-        V = np.zeros(mdp.P.shape[0], dtype=np.float64)
-        last = V.copy()
-        iters_run = 0
-        for _ in range(args.max_iters):
-            Q = mdp.R + mdp.gamma * (mdp.P @ V)
-            V = np.max(Q, axis=1)
-            if np.max(np.abs(V - last)) < args.tol:
-                break
-            last = V
-            iters_run += 1
-        # Derive policy from final Q
-        pi = greedy_from_q(Q)
+        raise ValueError(f"Unknown algo: {algo}")
 
     # If Q/pi not set for any reason (safety), compute from V
     if 'Q' not in locals():
@@ -277,7 +340,8 @@ def main():
             print(f"[saved values] {path}")
 
     # Compose title with convergence info if available
-    title = f"4-Room Gridworld — VI (γ={args.gamma}, slip={args.slip})"
+    label = {"vi": "VI", "pi": "PI", "soft_vi": "Soft-VI"}[algo]
+    title = f"4-Room Gridworld — {label} (γ={args.gamma}, slip={args.slip})"
     try:
         if 'iters_run' in locals() and iters_run is not None:
             title += f" — iters={int(iters_run)}"
@@ -285,8 +349,12 @@ def main():
             title += f" — t={elapsed_sec:.3f}s"
     except Exception:
         pass
+    # Adjust default outfile if user kept the VI default but selected a different algo
+    outfile = args.outfile
+    if outfile == "runs/figs/4room_vi.png" and algo != "vi":
+        outfile = f"runs/figs/4room_{algo}.png"
     plot_values_and_policy(
-        mdp, V, Q, pi, args.outfile, title,
+        mdp, V, Q, pi, outfile, title,
         annotate=args.annotate, decimals=args.decimals,
         annotate_fontsize=args.annotate_fontsize,
         annotate_contrast=args.annotate_contrast,
