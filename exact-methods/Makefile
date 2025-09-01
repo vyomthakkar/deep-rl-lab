@@ -20,9 +20,9 @@ fig-all: fig-vi fig-pi fig-soft
 	@echo "Saved figures in runs/figs"
 
 fig-vi-slip03:
-	@$(MAKE) fig-vi ARGS="--slip 0.3 --outfile runs/figs/4room_vi_slip03.png"
+	@$(MAKE) fig-vi ARGS="$(ARGS) --slip 0.3 --outfile runs/figs/4room_vi_slip03.png"
 
 fig-pi-slip03:
-	@$(MAKE) fig-pi ARGS="--slip 0.3 --outfile runs/figs/4room_pi_slip03.png"
+	@$(MAKE) fig-pi ARGS="$(ARGS) --slip 0.3 --outfile runs/figs/4room_pi_slip03.png"
 
 
