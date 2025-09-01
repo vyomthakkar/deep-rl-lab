@@ -4,6 +4,23 @@ import json
 from typing import Any, Dict
 import numpy as np
 
+# ------------------------------------------------------------
+# Edit these defaults in-code if you prefer not to pass CLI args
+# ------------------------------------------------------------
+ALGO: str = "vi"           # {"vi", "pi"}
+ENV_NAME: str = "4room"    # {"4room", "toy2"}
+GAMMA: float = 0.99
+SLIP: float = 0.10          # used only for 4room
+SEED: int = 0
+
+# VI params
+TOL: float = 1e-8
+MAX_ITERS: int = 2000
+
+# PI params
+EVAL_TOL: float = 1e-8
+MAX_EVAL_ITERS: int = 1000
+
 
 def build_env(env: str, gamma: float, slip: float, seed: int):
     if env == "4room":
@@ -32,17 +49,17 @@ def run_algo_and_get_logs(algo: str, mdp, args: argparse.Namespace) -> Dict[str,
 
 def main():
     parser = argparse.ArgumentParser(description="Run VI/PI and print logs (JSONL).")
-    parser.add_argument("--algo", type=str, default="vi", choices=["vi", "pi"], help="Algorithm to run")
-    parser.add_argument("--env", type=str, default="4room", choices=["4room", "toy2"], help="Environment builder")
-    parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--slip", type=float, default=0.10, help="Slip probability (4room only)")
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--algo", type=str, default=ALGO, choices=["vi", "pi"], help="Algorithm to run")
+    parser.add_argument("--env", type=str, default=ENV_NAME, choices=["4room", "toy2"], help="Environment builder")
+    parser.add_argument("--gamma", type=float, default=GAMMA)
+    parser.add_argument("--slip", type=float, default=SLIP, help="Slip probability (4room only)")
+    parser.add_argument("--seed", type=int, default=SEED)
     # VI params
-    parser.add_argument("--tol", type=float, default=1e-8)
-    parser.add_argument("--max_iters", type=int, default=2000)
+    parser.add_argument("--tol", type=float, default=TOL)
+    parser.add_argument("--max_iters", type=int, default=MAX_ITERS)
     # PI params
-    parser.add_argument("--eval_tol", type=float, default=1e-8)
-    parser.add_argument("--max_eval_iters", type=int, default=1000)
+    parser.add_argument("--eval_tol", type=float, default=EVAL_TOL)
+    parser.add_argument("--max_eval_iters", type=int, default=MAX_EVAL_ITERS)
     args = parser.parse_args()
 
     mdp = build_env(args.env, gamma=args.gamma, slip=args.slip, seed=args.seed)
