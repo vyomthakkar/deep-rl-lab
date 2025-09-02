@@ -9,7 +9,7 @@ import sys
 # ------------------------------------------------------------
 # Edit these defaults in-code if you prefer not to pass CLI args
 # ------------------------------------------------------------
-ALGO: str = "vi"           # {"vi", "pi"}
+ALGO: str = "pi"           # {"vi", "pi"}
 ENV_NAME: str = "4room"    # {"4room", "toy2"}
 GAMMA: float = 0.99
 SLIP: float = 0.10          # used only for 4room
