@@ -80,6 +80,8 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
     
     start_time = time.time()
     
+    converged = False
+    
     for i in range(max_iters):
         V_next, pi_next, Q = bellman_backup(V, mdp.P, mdp.R, mdp.gamma)
         
@@ -110,6 +112,7 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         pi = pi_next
         
         if delta < tol:
+            converged = True
             break
         
     end_time = time.time()
@@ -124,7 +127,8 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         "Q": Q,
         "pi": pi,
         "logs": logs,
-        "run_time": run_time
+        "run_time": run_time,
+        "converged": converged
     }
         
         

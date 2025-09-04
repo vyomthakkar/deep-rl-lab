@@ -12,26 +12,56 @@ if _SRC_DIR not in sys.path:
 
 from rlx.envs.tabular.gridworld import build_4room
 from rlx.algos.dp.soft_value_iteration import run_soft_vi, soft_bellman_backup
+from rlx.algos.dp.value_iteration import run_vi
 
 
-def main():
+def soft_vi():
+    print("=============== SOFT VI =============== ")
     mdp = build_4room(gamma=0.99, slip=0.0)
     shape = tuple(mdp.extras.get("shape", ()))
     print(
         f"Built 4-room MDP with shape={shape}, states={mdp.P.shape[0]}, actions={mdp.P.shape[1]}"
     )
-    tau = 0.1
+    tau = 1e-8
     tol = 1e-8
     max_iters = 1000
     result = run_soft_vi(mdp, tau=tau, tol=tol, max_iters=max_iters, logger=None)
-    print(result)
-    print(result["logs"])
     logs = result["logs"]
-    plt.plot([log["delta"] for log in logs])
-    plt.show()
+    lastV = result["V"]
+    converged = result["converged"]
+    print(f"{converged=}")
+    
+    delta = [log["delta"] for log in logs]
+    policy_l1_change = [log["policy_l1_change"] for log in logs]
+    entropy = [log["entropy"] for log in logs]
+    
+    # plt.plot(entropy)
+    # plt.show()
+    
+    print(f"{lastV=}")
+    
+def vi():
+    print("=============== VI =============== ")
+    mdp = build_4room(gamma=0.99, slip=0.0)
+    shape = tuple(mdp.extras.get("shape", ()))
+    print(
+        f"Built 4-room MDP with shape={shape}, states={mdp.P.shape[0]}, actions={mdp.P.shape[1]}"
+    )
+    tol = 1e-8
+    max_iters = 1000
+    result = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None)
+    logs = result["logs"]
+    lastV = result["V"]
+    converged = result["converged"]
+    print(f"{converged=}")
+    
+    print(f"{lastV=}")
+    
+    
 
 
 if __name__ == "__main__":
-    main()
+    soft_vi()
+    vi()
 
 

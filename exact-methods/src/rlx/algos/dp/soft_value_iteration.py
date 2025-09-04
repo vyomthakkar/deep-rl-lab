@@ -105,6 +105,8 @@ def run_soft_vi(mdp, tau: float, tol: float, max_iters: int, logger) -> dict:
     
     start_time = time.time()
     
+    converged = False
+    
     # TODO(human): Debug convergence issues
     # Current soft VI doesn't converge to regular VI as tau->0
     # Need to investigate: backup equation, initialization, or numerical issues?
@@ -141,6 +143,7 @@ def run_soft_vi(mdp, tau: float, tol: float, max_iters: int, logger) -> dict:
         pi_prob = pi_prob_next
         
         if delta < tol:
+            converged = True
             break
         
     end_time = time.time()
@@ -154,7 +157,8 @@ def run_soft_vi(mdp, tau: float, tol: float, max_iters: int, logger) -> dict:
         "Q": Q,
         "pi": pi_det,
         "logs": logs,
-        "run_time": run_time
+        "run_time": run_time,
+        "converged": converged
     }
         
         

@@ -142,4 +142,5 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
         "pi": pi,
         "logs": logs,
         "run_time": run_time,
+        "converged": True
     }
