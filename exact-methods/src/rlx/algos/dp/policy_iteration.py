@@ -28,9 +28,12 @@ def policy_evaluation_sweep(pi, V, P, R, gamma):
     """
     num_states = P.shape[0]
     
-    EV = P @ V
-    Q = R + gamma * EV
-    V_next = Q[np.arange(num_states), pi]
+    # Expected next-state value for each (s,a): EV[s,a] = sum_{s'} P[s,a,s'] * V[s']
+    EV = P @ V                                              # shape: (S, A)
+    Q = R + gamma * EV                                      # shape: (S, A)
+    
+    # Select Q-values according to current policy pi
+    V_next = Q[np.arange(num_states), pi]                  # shape: (S,)
     
     return V_next
     
@@ -70,8 +73,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
         - 'bellman_residual' here refers to the policy-evaluation residual
           ||T_pi V - V||_inf, not the optimality residual.
     """
-    
-    #Input validation
+    # Input validation
     assert eval_tol > 0, "Tolerance must be positive"
     assert max_eval_iters > 0, "Max iterations must be positive"
     assert 0 <= mdp.gamma < 1, "Discount must be in [0,1)"
@@ -88,36 +90,34 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
     outer_iter = 0
     
     while policy_l1_change != 0:
-        
-        #policy evaluation
+        # Policy evaluation phase
         inner_iter = 0
         for _ in range(max_eval_iters):
             V_next = policy_evaluation_sweep(pi, V, mdp.P, mdp.R, mdp.gamma)
-            delta = np.max(np.abs(V_next - V)).item()
+            delta = np.max(np.abs(V_next - V)).item()       # Policy evaluation residual
             V = V_next
             inner_iter += 1
             if delta < eval_tol:
                 break
             
-        #policy improvement
-        EV = mdp.P @ V
-        Q = mdp.R + mdp.gamma * EV
-        pi_next = Q.argmax(axis=1).astype(np.int64)
-        policy_l1_change = np.sum(pi_next != pi).item()
+        # Policy improvement phase
+        EV = mdp.P @ V                                      # shape: (S, A)
+        Q = mdp.R + mdp.gamma * EV                          # shape: (S, A)
+        pi_next = Q.argmax(axis=1).astype(np.int64)         # Greedy policy, shape: (S,)
+        policy_l1_change = np.sum(pi_next != pi).item()     # Number of states with policy change
         pi = pi_next
-        
-        #monitoring metrics
+        # Monitoring metrics
         wall_clock_time = time.time() - start_time
         
         logs.append({
             "outer_iter": outer_iter,
             "inner_iter": inner_iter,
-            "delta": delta,
-            "bellman_residual": delta,
+            "delta": delta,                                # Policy evaluation residual
+            "bellman_residual": delta,                     # Same as delta for PI
             "policy_l1_change": policy_l1_change,
-            "entropy": 0.0,
+            "entropy": 0.0,                                # Always 0.0 for deterministic PI policy
             "wall_clock_time": wall_clock_time,
-            # standardized fields across algos
+            # Standardized fields across algorithms
             "iter": int(outer_iter),
             "algo": "pi",
             "gamma": float(mdp.gamma),
@@ -143,25 +143,3 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
         "logs": logs,
         "run_time": run_time,
     }
-    
-
-    
-        
-        
-        
-        
-        
-        
-        
-            
-    
-        
-    
-    
-    
-    
-    
-    
-        
-    
-    

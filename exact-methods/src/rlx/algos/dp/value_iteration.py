@@ -24,18 +24,50 @@ def bellman_backup(V, P, R, gamma):
     """
     # Expected next-state value for each (s,a):
     # EV[s,a] = sum_{s'} P[s,a,s'] * V[s']
-    EV = P @ V                  #shape: (S, A)
-    Q = R + gamma * EV          #shape: (S, A)
-    V_next = Q.max(axis=1)      #shape: (S)
-    pi = Q.argmax(axis=1)       #shape: (S)
+    EV = P @ V                                              # shape: (S, A)
+    Q = R + gamma * EV                                      # shape: (S, A)
+    V_next = Q.max(axis=1)                                  # shape: (S,)
+    pi = Q.argmax(axis=1)                                   # shape: (S,)
     return V_next, pi, Q
     
     
 
 def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
-    """Returns {'V': V, 'Q': Q, 'pi': pi, 'logs': history}"""
-    
-    #Input validation
+    """Value Iteration (VI) for tabular MDPs.
+
+    Implements the Bellman optimality operator to find the optimal value function
+    and policy for the standard MDP objective:
+        maximize E[sum_t gamma^t R_t]
+
+    Procedure:
+      1) Initialize V = 0
+      2) Repeat until convergence:
+         - Apply Bellman backup: V_next = T* V = max_a [R + gamma * P @ V]
+         - Extract greedy policy: pi[s] = argmax_a Q[s,a]
+         - Check convergence: ||V_next - V||_inf < tol
+
+    Args:
+        mdp: Tabular MDP with P in R^{SxAxS}, R in R^{SxA}, discount gamma in [0,1).
+        tol: Convergence threshold for the value function residual.
+        max_iters: Maximum iterations before giving up.
+        logger: Optional logger with .info(str) for progress logs.
+
+    Returns:
+        A dict with:
+            - 'V': Final state values, shape (S,).
+            - 'Q': Action-values R + gamma * (P @ V) at convergence, shape (S, A).
+            - 'pi': Greedy policy indices per state, shape (S,).
+            - 'logs': List of per-iteration metrics each containing
+                      'delta' (== bellman_residual), 'policy_l1_change',
+                      'entropy', 'wall_clock_time', and standardized fields.
+            - 'run_time': Total wall-clock time in seconds.
+
+    Notes:
+        - 'entropy' is always 0.0 for deterministic VI policies.
+        - Ties in argmax are broken by numpy's first-maximum rule.
+        - This is the classic Bellman optimality iteration from Bellman (1957).
+    """
+    # Input validation
     assert tol > 0, "Tolerance must be positive"
     assert max_iters > 0, "Max iterations must be positive"
     assert 0 <= mdp.gamma < 1, "Discount must be in [0,1)"
@@ -51,9 +83,9 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
     for i in range(max_iters):
         V_next, pi_next, Q = bellman_backup(V, mdp.P, mdp.R, mdp.gamma)
         
-        #monitoring metrics
-        delta = np.max(np.abs(V_next - V)).item()
-        policy_l1_change = np.sum(pi_next != pi).item()  # Convert to Python int
+        # Monitoring metrics
+        delta = np.max(np.abs(V_next - V)).item()               # Bellman residual ||T*V - V||_inf
+        policy_l1_change = np.sum(pi_next != pi).item()         # Number of states with policy change
         wall_clock_time = time.time() - start_time
         
         logs.append({
