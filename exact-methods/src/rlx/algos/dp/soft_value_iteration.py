@@ -1,5 +1,6 @@
 import numpy as np
 import time
+from scipy.special import logsumexp
 
 
 def soft_bellman_backup(V, P, R, gamma, tau):
@@ -107,9 +108,6 @@ def run_soft_vi(mdp, tau: float, tol: float, max_iters: int, logger) -> dict:
     
     converged = False
     
-    # TODO(human): Debug convergence issues
-    # Current soft VI doesn't converge to regular VI as tau->0
-    # Need to investigate: backup equation, initialization, or numerical issues?
     for i in range(max_iters):
         V_next, pi_prob_next, Q = soft_bellman_backup(V, mdp.P, mdp.R, mdp.gamma, tau)
         

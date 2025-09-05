@@ -15,6 +15,8 @@ from rlx.algos.dp.soft_value_iteration import run_soft_vi, soft_bellman_backup
 from rlx.algos.dp.value_iteration import run_vi
 
 
+#https://chatgpt.com/c/68b962cb-f4f4-8321-8588-9fd4858270ca
+
 def soft_vi():
     print("=============== SOFT VI =============== ")
     mdp = build_4room(gamma=0.99, slip=0.0)
@@ -22,14 +24,16 @@ def soft_vi():
     print(
         f"Built 4-room MDP with shape={shape}, states={mdp.P.shape[0]}, actions={mdp.P.shape[1]}"
     )
-    tau = 1e-8
+    tau = 1e-6
     tol = 1e-8
+    # tol = 1e-5
     max_iters = 1000
     result = run_soft_vi(mdp, tau=tau, tol=tol, max_iters=max_iters, logger=None)
     logs = result["logs"]
     lastV = result["V"]
     converged = result["converged"]
     print(f"{converged=}")
+    print(f"{len(logs)=}")
     
     delta = [log["delta"] for log in logs]
     policy_l1_change = [log["policy_l1_change"] for log in logs]
@@ -39,6 +43,7 @@ def soft_vi():
     # plt.show()
     
     print(f"{lastV=}")
+    return delta
     
 def vi():
     print("=============== VI =============== ")
@@ -48,20 +53,31 @@ def vi():
         f"Built 4-room MDP with shape={shape}, states={mdp.P.shape[0]}, actions={mdp.P.shape[1]}"
     )
     tol = 1e-8
+    # tol = 1e-5
     max_iters = 1000
     result = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None)
     logs = result["logs"]
     lastV = result["V"]
     converged = result["converged"]
     print(f"{converged=}")
+    print(f"{len(logs)=}")
+    delta = [log["delta"] for log in logs]
     
     print(f"{lastV=}")
-    
+    return delta
     
 
 
 if __name__ == "__main__":
-    soft_vi()
-    vi()
+    delta_soft_vi = soft_vi()
+    delta_vi = vi()
+    
+    # print(f"{delta_soft_vi[:100]=}")
+    # print(f"{delta_vi[:100]=}")
+
+    # plt.plot(delta_soft_vi[:15], label="Soft VI")
+    # plt.plot(delta_vi[:15], label="VI")
+    # plt.legend()
+    # plt.show()
 
 
