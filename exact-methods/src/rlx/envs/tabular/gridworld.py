@@ -1,19 +1,10 @@
 from __future__ import annotations
-from dataclasses import dataclass
 from typing import List, Tuple, Dict, Optional
 import numpy as np
 
 Array = np.ndarray
 
-@dataclass
-class TabularMDP:
-    P: Array           # (S, A, S)
-    R: Array           # (S, A)
-    gamma: float
-    terminal_mask: Array  # (S,)
-    state_names: Optional[List[str]] = None
-    action_names: Optional[List[str]] = None
-    extras: Optional[Dict] = None
+from .mdp import TabularMDP
 
 ACTIONS = [( -1, 0), (0, 1), (1, 0), (0, -1)]  # U, R, D, L
 ACTION_NAMES = ["U", "R", "D", "L"]

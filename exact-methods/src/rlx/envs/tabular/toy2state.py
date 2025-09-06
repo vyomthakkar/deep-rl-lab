@@ -1,29 +1,11 @@
 # src/rlx/envs/tabular/toy2state.py
 from __future__ import annotations
-from dataclasses import dataclass
 from typing import List, Optional, Dict
 import numpy as np
 
 Array = np.ndarray
 
-@dataclass
-class TabularMDP:
-    """
-    Minimal tabular MDP container.
-
-    P: shape (S, A, S) transition probabilities
-    R: shape (S, A) expected immediate rewards
-    gamma: discount in [0,1)
-    terminal_mask: shape (S,), True for terminal/absorbing states
-    state_names / action_names: optional labels for nicer plots/logs
-    """
-    P: Array
-    R: Array
-    gamma: float
-    terminal_mask: Array
-    state_names: Optional[List[str]] = None
-    action_names: Optional[List[str]] = None
-    extras: Optional[Dict] = None  # free-form metadata
+from .mdp import TabularMDP
 
 def build(gamma: float = 0.99, p_loop: float = 0.5, r_reward: float = 1.0, seed: int = 0) -> TabularMDP:
     """
