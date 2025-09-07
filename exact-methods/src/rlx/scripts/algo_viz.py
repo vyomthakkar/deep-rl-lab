@@ -13,6 +13,7 @@ if _SRC_DIR not in sys.path:
 from rlx.envs.tabular.gridworld import build_4room
 from rlx.algos.dp.soft_value_iteration import run_soft_vi, soft_bellman_backup
 from rlx.algos.dp.value_iteration import run_vi
+from rlx.algos.dp.policy_iteration import run_pi
 
 
 #https://chatgpt.com/c/68b962cb-f4f4-8321-8588-9fd4858270ca
@@ -68,6 +69,14 @@ def vi():
 
 ### Assignment Plots (Part C) ###
 
+
+### Part C.1 ###
+###
+### Convergence curves
+###
+### Plot ||V_{k+1}-V_k||∞ vs iteration (VI, Soft-VI @ τ=0.1).
+### Plot policy change Σ_s ||π_{k+1}(.|s)−π_k(.|s)||₁ vs iteration.
+###
 def convergence_curves():
     # --- Hyperparameters ---
     tau = 0.1
@@ -160,18 +169,107 @@ def convergence_curves():
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
+    
 
+### Part C.2 ###
+### VI vs PI agreement
+###
+### After convergence, report ||V_VI−V_PI||∞ and whether greedy policies match (document tie-break rule).
+###
+def vi_pi_agreement():
+    # --- Hyperparameters ---
+    tol = 1e-8
+    eval_tol = 1e-8  # Policy evaluation tolerance for PI
+    max_iters = 1000
+    max_eval_iters = 1000  # Max evaluation iterations for PI
+    gamma = 0.99
+    slip = 0.4  # Use deterministic environment for agreement testing
+    seeds = [1, 2, 3, 4, 5]  # 5 seeds for robustness
+    
+    # --- Data Storage ---
+    value_differences = []  # Store ||V_VI - V_PI||∞ for each seed
+    policy_agreements = []  # Store policy match counts for each seed
+    total_states = 0  # Will be set after first MDP creation
+    
+    # --- Run Experiments ---
+    for seed in seeds:
+        print(f"--- Running with seed: {seed} ---")
+        np.random.seed(seed)  # Set the seed for reproducibility
+
+        # Build deterministic environment for VI/PI agreement testing
+        mdp = build_4room(gamma=gamma, slip=slip, seed=seed)
+        if total_states == 0:
+            total_states = len(mdp.state_names)
+        print(f"  Environment: {total_states} states, slip = {slip}")
+        
+        # --- Value Iteration ---
+        print("Running Value Iteration...")
+        vi_result = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None)
+        V_vi = vi_result["V"]
+        pi_vi = vi_result["pi"]
+        Q_vi = vi_result["Q"]
+        
+        # --- Policy Iteration ---
+        print("Running Policy Iteration...")
+        pi_result = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None)
+        V_pi = pi_result["V"]
+        pi_pi = pi_result["pi"]
+        Q_pi = pi_result["Q"]
+        
+        # TODO(human): Implement comparison logic here
+        # 1. Compute ||V_VI - V_PI||∞ 
+        # 2. Check policy agreement (count matching actions)
+        # 3. Handle tie-breaking cases (detect when Q-values are equal)
+        # 4. Store results for aggregation across seeds
+        value_diff = np.max(np.abs(V_vi - V_pi))
+        policy_agreement_pctg = (np.sum(pi_vi == pi_pi) / total_states) * 100
+        value_differences.append(value_diff)
+        policy_agreements.append(policy_agreement_pctg)
+        policy_tie_breaking(Q_vi, Q_pi, pi_vi, pi_pi, policy_agreement_pctg)
+        
+        
+    # TODO(human): Add results aggregation and reporting
+    # 1. Compute mean/std of value differences across seeds
+    # 2. Compute mean/std of policy agreement percentages
+    # 3. Print summary statistics
+    # 4. Document tie-breaking behavior (if any detected)
+    print(f"Value difference: {value_differences}")
+    print(f"Policy agreement: {policy_agreements}")
+    print(f"Value difference: {np.mean(value_differences):.6f} ± {np.std(value_differences):.6f}")
+    print(f"Policy agreement: {np.mean(policy_agreements):.6f} ± {np.std(policy_agreements):.6f}")
     
     
-    
-    
-    
-    
-    
-    
+def policy_tie_breaking(Q_vi, Q_pi, pi_vi, pi_pi, policy_agreement_pctg):
+  print("### Tie Breaking analysis (start) ###\n")
+  # After computing VI and PI results
+  total_states = len(Q_vi)
+  tie_states = []
+  epsilon = 1e-12  # Very small threshold for detecting ties
+
+  for state in range(total_states):
+      q_vi = Q_vi[state]
+      q_pi = Q_pi[state]
+
+      # Sort Q-values to find potential ties
+      q_sorted = np.sort(q_vi)[::-1]  # Descending order
+
+      # Check if top 2 Q-values are very close
+      if len(q_sorted) > 1 and (q_sorted[0] - q_sorted[1]) < epsilon:
+          tie_states.append(state)
+
+          # Check if policies differ for this tied state
+          if pi_vi[state] != pi_pi[state]:
+              print(f"Tie-break conflict at state {state}:")
+              print(f"  Q-values (vi): {q_vi}")
+              print(f"  Q-values (pi): {q_pi}")
+              print(f"  VI choice: {pi_vi[state]}, PI choice: {pi_pi[state]}")
+
+  print(f"\nTie analysis:")
+  print(f"States with tied Q-values: {len(tie_states)}")
+  print(f"States with policy disagreement: {total_states - int(policy_agreement_pctg/100 * total_states)}")
+  print("### Tie Breaking analysis (end) ###\n")
 
 
 if __name__ == "__main__":
-    convergence_curves()
-
-
+    # convergence_curves()
+    vi_pi_agreement()
