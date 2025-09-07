@@ -216,7 +216,6 @@ def vi_pi_agreement():
         pi_pi = pi_result["pi"]
         Q_pi = pi_result["Q"]
         
-        # TODO(human): Implement comparison logic here
         # 1. Compute ||V_VI - V_PI||∞ 
         # 2. Check policy agreement (count matching actions)
         # 3. Handle tie-breaking cases (detect when Q-values are equal)
@@ -228,11 +227,11 @@ def vi_pi_agreement():
         policy_tie_breaking(Q_vi, Q_pi, pi_vi, pi_pi, policy_agreement_pctg)
         
         
-    # TODO(human): Add results aggregation and reporting
+    # Results aggregation and reporting
     # 1. Compute mean/std of value differences across seeds
     # 2. Compute mean/std of policy agreement percentages
     # 3. Print summary statistics
-    # 4. Document tie-breaking behavior (if any detected)
+    # 4. Document tie-breaking behavior (in the report)
     print(f"Value difference: {value_differences}")
     print(f"Policy agreement: {policy_agreements}")
     print(f"Value difference: {np.mean(value_differences):.6f} ± {np.std(value_differences):.6f}")
