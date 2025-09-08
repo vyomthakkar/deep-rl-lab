@@ -3,6 +3,7 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from itertools import product
 
 # Ensure 'src' is on sys.path when running this file directly
 _ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -267,8 +268,205 @@ def policy_tie_breaking(Q_vi, Q_pi, pi_vi, pi_pi, policy_agreement_pctg):
   print(f"States with tied Q-values: {len(tie_states)}")
   print(f"States with policy disagreement: {total_states - int(policy_agreement_pctg/100 * total_states)}")
   print("### Tie Breaking analysis (end) ###\n")
+  
+  
+
+### Part C.3 ###
+###
+### Sweep γ∈{0.90,0.99} × p_slip∈{0,0.1,0.3}.
+### Record iterations to tolerance and wall-clock for VI vs PI (bar chart).
+###
+def gamma_slip_sensitivity():
+    # Sweep params
+    gamma_values = [0.9, 0.99]
+    p_slip_values = [0.0, 0.1, 0.3]
+    
+    # Algo params
+    tol = 1e-8
+    max_iters = 1000
+    max_eval_iters = 1000 #for pi
+    eval_tol = 1e-8 #for pi
+    
+    # Data collection structures
+    results = []
+    
+    print("=== Gamma & Slip Sensitivity Analysis ===")
+    
+    for gamma, p_slip in product(gamma_values, p_slip_values):
+        print(f"\n--- Running γ={gamma}, slip={p_slip} ---")
+        mdp = build_4room(gamma=gamma, slip=p_slip)
+        print(f"Environment: {len(mdp.state_names)} states")
+        
+        # --- Value Iteration ---
+        print("Running Value Iteration...")
+        vi_result = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None)
+        vi_iters = len(vi_result['logs'])
+        vi_converged = vi_result['converged']
+        vi_time = vi_result['run_time']
+        print(f"  VI: {vi_iters} iters, {vi_time:.4f}s, converged={vi_converged}")
+        
+        # --- Policy Iteration ---
+        print("Running Policy Iteration...")
+        pi_result = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None)
+        pi_iters = len(pi_result['logs'])  # outer iterations
+        pi_converged = pi_result['converged']
+        pi_time = pi_result['run_time']
+        print(f"  PI: {pi_iters} iters, {pi_time:.4f}s, converged={pi_converged}")
+        
+        # Store results
+        results.append({
+            'gamma': gamma,
+            'slip': p_slip,
+            'vi_iters': vi_iters,
+            'vi_time': vi_time,
+            'vi_converged': vi_converged,
+            'pi_iters': pi_iters,
+            'pi_time': pi_time,
+            'pi_converged': pi_converged,
+        })
+    
+    print(f"\n=== Creating Bar Charts ===")
+    
+    # Create grouped bar chart
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    
+    # Extract data for plotting
+    conditions = [f"γ={r['gamma']}, slip={r['slip']}" for r in results]
+    vi_iters_data = [r['vi_iters'] for r in results]
+    pi_iters_data = [r['pi_iters'] for r in results]
+    vi_times_data = [r['vi_time'] for r in results]
+    pi_times_data = [r['pi_time'] for r in results]
+    
+    x = np.arange(len(conditions))
+    width = 0.35
+    
+    # Iterations bar chart
+    bars1 = ax1.bar(x - width/2, vi_iters_data, width, label='VI', alpha=0.8, color='skyblue')
+    bars2 = ax1.bar(x + width/2, pi_iters_data, width, label='PI', alpha=0.8, color='lightcoral')
+    
+    ax1.set_xlabel('Conditions (γ, slip)')
+    ax1.set_ylabel('Iterations to Convergence')
+    ax1.set_title('Iterations to Tolerance: VI vs PI')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(conditions, rotation=45, ha='right')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    for bar in bars1:
+        height = bar.get_height()
+        ax1.annotate(f'{int(height)}', xy=(bar.get_x() + bar.get_width()/2, height),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=9)
+    for bar in bars2:
+        height = bar.get_height()
+        ax1.annotate(f'{int(height)}', xy=(bar.get_x() + bar.get_width()/2, height),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=9)
+    
+    # Wall-clock time bar chart
+    bars3 = ax2.bar(x - width/2, vi_times_data, width, label='VI', alpha=0.8, color='skyblue')
+    bars4 = ax2.bar(x + width/2, pi_times_data, width, label='PI', alpha=0.8, color='lightcoral')
+    
+    ax2.set_xlabel('Conditions (γ, slip)')
+    ax2.set_ylabel('Wall-Clock Time (seconds)')
+    ax2.set_title('Wall-Clock Time: VI vs PI')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(conditions, rotation=45, ha='right')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    for bar in bars3:
+        height = bar.get_height()
+        ax2.annotate(f'{height:.3f}', xy=(bar.get_x() + bar.get_width()/2, height),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=9)
+    for bar in bars4:
+        height = bar.get_height()
+        ax2.annotate(f'{height:.3f}', xy=(bar.get_x() + bar.get_width()/2, height),
+                     xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=9)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Print summary table
+    print(f"\n=== Summary Table ===")
+    print(f"{'Condition':<15} {'VI Iters':<10} {'PI Iters':<10} {'VI Time':<10} {'PI Time':<10}")
+    print("-" * 65)
+    for r in results:
+        condition = f"γ={r['gamma']}, slip={r['slip']}"
+        print(f"{condition:<15} {r['vi_iters']:<10} {r['pi_iters']:<10} {r['vi_time']:<10.4f} {r['pi_time']:<10.4f}")
+        
+    return results
+
+
+### DIAGNOSTIC FUNCTION ###
+def debug_vi_pi_convergence():
+    """Debug why VI and PI take the same number of iterations in deterministic case."""
+    print("=== DEBUGGING VI vs PI Convergence ===")
+    
+    # Use deterministic case
+    gamma = 0.99
+    slip = 0.0
+    tol = 1e-8
+    eval_tol = 1e-8
+    max_iters = 1000
+    max_eval_iters = 1000
+    
+    mdp = build_4room(gamma=gamma, slip=slip)
+    print(f"Environment: {len(mdp.state_names)} states, γ={gamma}, slip={slip}")
+    
+    print("\n--- VALUE ITERATION DETAILED ---")
+    vi_result = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None)
+    vi_logs = vi_result["logs"]
+    print(f"VI converged in {len(vi_logs)} iterations")
+    print("First 5 VI iterations:")
+    for i, log in enumerate(vi_logs[:5]):
+        print(f"  Iter {i}: delta={log['delta']:.2e}, policy_changes={log['policy_l1_change']}")
+    print("Last 5 VI iterations:")
+    for i, log in enumerate(vi_logs[-5:], len(vi_logs)-5):
+        print(f"  Iter {i}: delta={log['delta']:.2e}, policy_changes={log['policy_l1_change']}")
+    
+    print(f"\n--- POLICY ITERATION DETAILED ---")
+    pi_result = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None)
+    pi_logs = pi_result["logs"]
+    print(f"PI converged in {len(pi_logs)} outer iterations")
+    print("All PI outer iterations:")
+    for i, log in enumerate(pi_logs):
+        print(f"  Outer {i}: inner_iters={log['inner_iter']}, delta={log['delta']:.2e}, policy_changes={log['policy_l1_change']}")
+    
+    print(f"\n--- VALUE COMPARISON ---")
+    V_vi = vi_result["V"]
+    V_pi = pi_result["V"]
+    pi_vi = vi_result["pi"]
+    pi_pi = pi_result["pi"]
+    
+    value_diff = np.max(np.abs(V_vi - V_pi))
+    policy_agreement = np.sum(pi_vi == pi_pi) / len(pi_vi) * 100
+    
+    print(f"||V_VI - V_PI||∞ = {value_diff:.2e}")
+    print(f"Policy agreement: {policy_agreement:.1f}%")
+    
+    # Check if policies are optimal from start
+    print(f"\n--- INITIAL POLICY CHECK ---")
+    # Check what the initial policy improvement would yield
+    initial_V = np.zeros(len(mdp.state_names))
+    EV_initial = mdp.P @ initial_V
+    Q_initial = mdp.R + mdp.gamma * EV_initial
+    optimal_pi_from_zero = Q_initial.argmax(axis=1)
+    
+    print(f"Optimal policy from V=0: first 10 actions = {optimal_pi_from_zero[:10]}")
+    print(f"Final VI policy: first 10 actions = {pi_vi[:10]}")
+    print(f"Final PI policy: first 10 actions = {pi_pi[:10]}")
+    
+    return {
+        'vi_iters': len(vi_logs),
+        'pi_iters': len(pi_logs),
+        'value_diff': value_diff,
+        'policy_agreement': policy_agreement
+    }
 
 
 if __name__ == "__main__":
     # convergence_curves()
-    vi_pi_agreement()
+    # vi_pi_agreement()
+    # gamma_slip_sensitivity()
+    debug_vi_pi_convergence()

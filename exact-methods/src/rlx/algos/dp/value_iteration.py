@@ -90,6 +90,12 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         policy_l1_change = np.sum(pi_next != pi).item()         # Number of states with policy change
         wall_clock_time = time.time() - start_time
         
+        # TODO(human): Add Bellman backup counting for fair algorithmic comparison
+        # Current: Only tracking wall-clock time (influenced by Python overhead)
+        # Should also track: "bellman_backups": number of state-action evaluations
+        # For VI: each iteration does S*A backups (one per state-action pair)
+        # This gives a hardware-independent measure of computational work
+        
         logs.append({
             "i": i,
             "delta": delta,
@@ -97,6 +103,8 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
             "policy_l1_change": policy_l1_change,
             "entropy": 0.0,  # Always 0.0 for deterministic VI policy
             "wall_clock_time": wall_clock_time,
+            # TODO(human): Add "bellman_backups": (i + 1) * num_states * num_actions
+            "bellman_backups": (i + 1) * num_states * num_actions,
             # standardized fields across algos
             "iter": int(i),
             "algo": "vi",
@@ -111,7 +119,12 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         V = V_next
         pi = pi_next
         
-        if delta < tol:
+        # TODO(human): Fix gamma-scaled stopping criterion
+        # Current: delta < tol (not theoretically sound)
+        # Should be: delta < tol * (1 - gamma) / 2 for ε-optimality guarantee
+        # This ensures ||V* - V||∞ ≤ ε when ||T*V - V||∞ ≤ ε(1-γ)/2
+        # Without this scaling, VI appears artificially fast at high γ values
+        if delta < tol * (1 - mdp.gamma) / 2:
             converged = True
             break
         

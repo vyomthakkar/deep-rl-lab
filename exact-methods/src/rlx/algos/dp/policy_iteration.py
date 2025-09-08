@@ -81,7 +81,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
     
     num_states = mdp.P.shape[0]
     V = np.zeros(num_states, dtype=np.float64)
-    pi = np.zeros(num_states, dtype=np.int64)
+    pi = np.zeros(num_states, dtype=np.int64)  # TODO(human): Consider greedy initialization: pi = mdp.R.argmax(axis=1).astype(np.int64)
     policy_l1_change = np.inf
     logs = []
     
@@ -103,11 +103,24 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
         # Policy improvement phase
         EV = mdp.P @ V                                      # shape: (S, A)
         Q = mdp.R + mdp.gamma * EV                          # shape: (S, A)
+        # TODO(human): Implement Howard's improvement tie-breaking
+        # Current: Q.argmax(axis=1) - always picks first max (can cause oscillation)
+        # Should be: When Q[s,a] ≈ Q[s,pi[s]], keep current action pi[s] to avoid unnecessary changes
+        # This prevents policy oscillation when multiple actions are equally good
+        # Suggested approach: np.where(Q.max(axis=1, keepdims=True) - Q[np.arange(S), pi] < 1e-12, pi, Q.argmax(axis=1))
         pi_next = Q.argmax(axis=1).astype(np.int64)         # Greedy policy, shape: (S,)
         policy_l1_change = np.sum(pi_next != pi).item()     # Number of states with policy change
         pi = pi_next
         # Monitoring metrics
         wall_clock_time = time.time() - start_time
+        
+        # TODO(human): Add PI-specific backup counting and tighten inner tolerance
+        # Current issues:
+        # 1. Inner tolerance (eval_tol) might be too loose, causing more outer iterations
+        # 2. Not tracking total evaluation sweeps vs. outer policy improvements
+        # 3. Should count: inner_iter * num_states for evaluation + num_states * num_actions for improvement
+        # 4. Consider: eval_tol = tol / 10 for tighter inner convergence
+        # 5. Alternative: Implement direct linear solve V = (I - γP^π)^{-1} r^π
         
         logs.append({
             "outer_iter": outer_iter,
@@ -117,6 +130,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
             "policy_l1_change": policy_l1_change,
             "entropy": 0.0,                                # Always 0.0 for deterministic PI policy
             "wall_clock_time": wall_clock_time,
+            # TODO(human): Add "bellman_backups": total_eval_sweeps * num_states + outer_iter * num_states * num_actions
             # Standardized fields across algorithms
             "iter": int(outer_iter),
             "algo": "pi",
