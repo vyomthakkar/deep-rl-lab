@@ -98,7 +98,7 @@ def run_vi(mdp, tol: float, max_iters: int, logger, use_optimizations: bool = Fa
             "policy_l1_change": policy_l1_change,
             "entropy": 0.0,  # Always 0.0 for deterministic VI policy
             "wall_clock_time": wall_clock_time,
-            "bellman_backups": (i + 1) * num_states * num_actions, 
+            "bellman_backups": num_states * num_actions, 
             # standardized fields across algos
             "iter": int(i),
             "algo": "vi",

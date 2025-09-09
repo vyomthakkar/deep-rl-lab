@@ -80,14 +80,14 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
     assert np.allclose(mdp.P.sum(axis=-1), 1.0), "Transitions must be stochastic"
     
     num_states = mdp.P.shape[0]
+    num_actions = mdp.P.shape[1]
     V = np.zeros(num_states, dtype=np.float64)
     
-    # TODO(human): Implement feature flag for initialization strategy
-    # if use_optimizations:
-    #     pi = mdp.R.argmax(axis=1).astype(np.int64)  # Greedy initialization
-    # else:
-    #     pi = np.zeros(num_states, dtype=np.int64)   # Zero initialization (original)
-    pi = mdp.R.argmax(axis=1).astype(np.int64)  # Currently using optimized version
+    if use_optimizations:
+        pi = mdp.R.argmax(axis=1).astype(np.int64)  # Greedy initialization
+    else:
+        pi = np.zeros(num_states, dtype=np.int64)   # Zero initialization (original)
+    
     policy_l1_change = np.inf
     logs = []
     
@@ -109,34 +109,25 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
         # Policy improvement phase
         EV = mdp.P @ V                                      # shape: (S, A)
         Q = mdp.R + mdp.gamma * EV                          # shape: (S, A)
-        # TODO(human): Implement feature flag for tie-breaking strategy AND fix the bug
-        # Bug: Q[np.arange(S, pi)] has undefined 'S' and wrong syntax
-        # Should be: Q[np.arange(num_states), pi]
-        # 
-        # if use_optimizations:
-        #     # Howard's improvement: keep current action when tied
-        #     pi_next = np.where(Q.max(axis=1, keepdims=True) - Q[np.arange(num_states), pi] < 1e-12, 
-        #                        pi, Q.argmax(axis=1)).astype(np.int64)
-        # else:
-        #     # Naive greedy: always pick first maximum
-        #     pi_next = Q.argmax(axis=1).astype(np.int64)
-        pi_next = np.where(Q.max(axis=1, keepdims=True) - Q[np.arange(num_states), pi] < 1e-12, pi, Q.argmax(axis=1)).astype(np.int64)  # Fixed bug
+        
+        
+        if use_optimizations:
+            # Howard's improvement: keep current action when tied
+            pi_next = np.where(Q.max(axis=1, keepdims=True) - Q[np.arange(num_states), pi] < 1e-12, 
+                               pi, Q.argmax(axis=1)).astype(np.int64)
+        else:
+            # Naive greedy: always pick first maximum
+            pi_next = Q.argmax(axis=1).astype(np.int64)
+        
         policy_l1_change = np.sum(pi_next != pi).item()     # Number of states with policy change
         pi = pi_next
         # Monitoring metrics
         wall_clock_time = time.time() - start_time
         
-        # TODO(human): Implement feature flag for backup counting AND fix the bug
-        # Bug: 'i' is undefined (this is outer_iter context, not iteration i)
-        # PI cost structure: evaluation sweeps + improvement steps
-        # 
-        # if use_optimizations:
-        #     # Track hardware-independent cost: evaluation + improvement
-        #     total_eval_backups = inner_iter * num_states
-        #     improvement_backups = num_states * mdp.P.shape[1]  # num_actions
-        #     backup_count = total_eval_backups + improvement_backups
-        # else:
-        #     backup_count = None  # Don't track in naive mode
+        # Track hardware-independent cost: evaluation + improvement
+        total_eval_backups = inner_iter * num_states
+        improvement_backups = num_states * mdp.P.shape[1]  # num_actions
+        backup_count = total_eval_backups + improvement_backups
         
         logs.append({
             "outer_iter": outer_iter,
@@ -146,7 +137,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
             "policy_l1_change": policy_l1_change,
             "entropy": 0.0,                                # Always 0.0 for deterministic PI policy
             "wall_clock_time": wall_clock_time,
-            "bellman_backups": inner_iter * num_states + num_states * mdp.P.shape[1],  # Fixed: proper PI cost calculation
+            "bellman_backups": backup_count,
             # Standardized fields across algorithms
             "iter": int(outer_iter),
             "algo": "pi",
