@@ -81,7 +81,8 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
     
     num_states = mdp.P.shape[0]
     V = np.zeros(num_states, dtype=np.float64)
-    pi = np.zeros(num_states, dtype=np.int64)  # TODO(human): Consider greedy initialization: pi = mdp.R.argmax(axis=1).astype(np.int64)
+    # pi = np.zeros(num_states, dtype=np.int64)  # TODO(human): Consider greedy initialization: pi = mdp.R.argmax(axis=1).astype(np.int64)
+    pi = mdp.R.argmax(axis=1).astype(np.int64)
     policy_l1_change = np.inf
     logs = []
     
@@ -108,7 +109,8 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
         # Should be: When Q[s,a] ≈ Q[s,pi[s]], keep current action pi[s] to avoid unnecessary changes
         # This prevents policy oscillation when multiple actions are equally good
         # Suggested approach: np.where(Q.max(axis=1, keepdims=True) - Q[np.arange(S), pi] < 1e-12, pi, Q.argmax(axis=1))
-        pi_next = Q.argmax(axis=1).astype(np.int64)         # Greedy policy, shape: (S,)
+        # pi_next = Q.argmax(axis=1).astype(np.int64)         # Greedy policy, shape: (S,)
+        pi_next = np.where(Q.max(axis=1, keepdims=True) - Q[np.arange(S, pi)] < 1e-12, pi, Q.argmax(axis=1)) #Howard's improvement tie-breaking
         policy_l1_change = np.sum(pi_next != pi).item()     # Number of states with policy change
         pi = pi_next
         # Monitoring metrics
@@ -131,6 +133,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger) -> dict:
             "entropy": 0.0,                                # Always 0.0 for deterministic PI policy
             "wall_clock_time": wall_clock_time,
             # TODO(human): Add "bellman_backups": total_eval_sweeps * num_states + outer_iter * num_states * num_actions
+            "bellman_backups": (i + 1) * num_states * num_actions,
             # Standardized fields across algorithms
             "iter": int(outer_iter),
             "algo": "pi",
