@@ -32,7 +32,7 @@ def bellman_backup(V, P, R, gamma):
     
     
 
-def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
+def run_vi(mdp, tol: float, max_iters: int, logger, use_optimizations: bool = False) -> dict:  # TODO(human): Design feature flag approach
     """Value Iteration (VI) for tabular MDPs.
 
     Implements the Bellman optimality operator to find the optimal value function
@@ -74,6 +74,7 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
     assert np.allclose(mdp.P.sum(axis=-1), 1.0), "Transitions must be stochastic"
 
     num_states = mdp.P.shape[0]
+    num_actions = mdp.P.shape[1]
     V = np.zeros(num_states, dtype=np.float64)
     pi = np.zeros(num_states, dtype=np.int64)
     logs = []
@@ -90,12 +91,6 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         policy_l1_change = np.sum(pi_next != pi).item()         # Number of states with policy change
         wall_clock_time = time.time() - start_time
         
-        # TODO(human): Add Bellman backup counting for fair algorithmic comparison
-        # Current: Only tracking wall-clock time (influenced by Python overhead)
-        # Should also track: "bellman_backups": number of state-action evaluations
-        # For VI: each iteration does S*A backups (one per state-action pair)
-        # This gives a hardware-independent measure of computational work
-        
         logs.append({
             "i": i,
             "delta": delta,
@@ -103,8 +98,7 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
             "policy_l1_change": policy_l1_change,
             "entropy": 0.0,  # Always 0.0 for deterministic VI policy
             "wall_clock_time": wall_clock_time,
-            # TODO(human): Add "bellman_backups": (i + 1) * num_states * num_actions
-            "bellman_backups": (i + 1) * num_states * num_actions,
+            "bellman_backups": (i + 1) * num_states * num_actions, 
             # standardized fields across algos
             "iter": int(i),
             "algo": "vi",
@@ -119,12 +113,14 @@ def run_vi(mdp, tol: float, max_iters: int, logger) -> dict:
         V = V_next
         pi = pi_next
         
-        # TODO(human): Fix gamma-scaled stopping criterion
-        # Current: delta < tol (not theoretically sound)
-        # Should be: delta < tol * (1 - gamma) / 2 for ε-optimality guarantee
-        # This ensures ||V* - V||∞ ≤ ε when ||T*V - V||∞ ≤ ε(1-γ)/2
-        # Without this scaling, VI appears artificially fast at high γ values
-        if delta < tol * (1 - mdp.gamma) / 2:
+        if use_optimizations:
+            # Gamma-scaled stopping for ε-optimality guarantee
+            effective_tol = tol * (1 - mdp.gamma) / 2
+        else:
+            # Naive stopping criterion (original)
+            effective_tol = tol
+            
+        if delta < effective_tol:
             converged = True
             break
         
