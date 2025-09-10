@@ -15,6 +15,17 @@
           "--slip", "0.3",
           "--annotate", "--decimals", "2"
         ]
+      },
+      {
+        "name": "Debug algo_viz",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "src/rlx/scripts/algo_viz.py",
+        "console": "integratedTerminal",
+        "cwd": "${workspaceFolder}",
+        "python": "${workspaceFolder}/venv/bin/python",
+        "env": { "PYTHONPATH": "src" },
+        "justMyCode": true
       }
     ]
   }

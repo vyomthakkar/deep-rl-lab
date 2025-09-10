@@ -113,7 +113,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
         
         if use_optimizations:
             # Howard's improvement: keep current action when tied
-            pi_next = np.where(Q.max(axis=1, keepdims=True) - Q[np.arange(num_states), pi] < 1e-12, 
+            pi_next = np.where(Q.max(axis=1) - Q[np.arange(num_states), pi] < 1e-12, 
                                pi, Q.argmax(axis=1)).astype(np.int64)
         else:
             # Naive greedy: always pick first maximum

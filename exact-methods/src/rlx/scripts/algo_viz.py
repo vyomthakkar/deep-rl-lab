@@ -299,7 +299,7 @@ def gamma_slip_sensitivity():
         
         # --- Value Iteration ---
         print("Running Value Iteration...")
-        vi_result = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None)
+        vi_result = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None, use_optimizations=True)
         vi_iters = len(vi_result['logs'])
         vi_converged = vi_result['converged']
         vi_time = vi_result['run_time']
@@ -307,7 +307,7 @@ def gamma_slip_sensitivity():
         
         # --- Policy Iteration ---
         print("Running Policy Iteration...")
-        pi_result = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None)
+        pi_result = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None, use_optimizations=True)
         pi_iters = len(pi_result['logs'])  # outer iterations
         pi_converged = pi_result['converged']
         pi_time = pi_result['run_time']
@@ -463,10 +463,12 @@ def debug_vi_pi_convergence():
         'value_diff': value_diff,
         'policy_agreement': policy_agreement
     }
+    
+    
 
 
 if __name__ == "__main__":
     # convergence_curves()
     # vi_pi_agreement()
-    # gamma_slip_sensitivity()
-    debug_vi_pi_convergence()
+    gamma_slip_sensitivity()
+    # debug_vi_pi_convergence()
