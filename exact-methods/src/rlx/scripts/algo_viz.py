@@ -464,11 +464,138 @@ def debug_vi_pi_convergence():
         'policy_agreement': policy_agreement
     }
     
+def vi_vs_vi_optimized():
+    """Compare VI and VI optimized."""
+    
+    print("=============== Test VI vs VI Optimized =============== ")
+    print("In this test, we should see that VI optimized should take more iterations should converge, with a lower bellman residual")
+    print("=======================================================")
+    
+    gamma = 0.99
+    slip = 0.3
+    tol = 1e-8
+    max_iters = 1000
+    
+    mdp = build_4room(gamma=gamma, slip=slip)
+    print(f"Environment: {len(mdp.state_names)} states, γ={gamma}, slip={slip}")
+    
+    vi_result = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None)
+    vi_logs = vi_result["logs"]
+    
+    print("\n--- VI DETAILED ---")
+    print(f"Number of iterations for VI: {len(vi_logs)}")
+    print(f"Convergence for VI: {vi_result['converged']}")
+    print(f"Last Bellman residual for VI: {vi_logs[-1]['bellman_residual']}")
+    
+    vi_result_optimized = run_vi(mdp, tol=tol, max_iters=max_iters, logger=None, use_optimizations=True)
+    vi_logs_optimized = vi_result_optimized["logs"]
+
+    print("\n--- VI Optimized DETAILED ---")
+    print(f"Number of iterations for VI optimized: {len(vi_logs_optimized)}")  
+    print(f"Convergence for VI optimized: {vi_result_optimized['converged']}")
+    print(f"Last Bellman residual for VI optimized: {vi_logs_optimized[-1]['bellman_residual']}")
+    
+    
+def pi_vs_pi_optimized():
+    """Compare PI and PI optimized."""
+    
+    # print("=============== Test PI vs PI Optimized =============== ")
+    # print("In this test, we should see that PI optimized should take fewer iterations should converge, with a lower bellman residual")
+    # print("=======================================================")
+    
+    gamma = 0.9
+    slip = 0.7
+    tol = 1e-8
+    max_iters = 1000
+    eval_tol = 1e-8
+    max_eval_iters = 1000
+    
+    mdp = build_4room(gamma=gamma, slip=slip)
+    print(f"Environment: {len(mdp.state_names)} states, γ={gamma}, slip={slip}")
+    
+    pi_result = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None)
+    pi_logs = pi_result["logs"]
+    
+    print("\n--- PI DETAILED ---")
+    print(f"Number of iterations for PI: {len(pi_logs)}")
+    print(f"Convergence for PI: {pi_result['converged']}")
+    print(f"Last Bellman residual for PI: {pi_logs[-1]['bellman_residual']}")
+    
+    pi_result_optimized = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None, use_optimizations=True)
+    pi_logs_optimized = pi_result_optimized["logs"]
+    
+    print("\n--- PI Optimized DETAILED ---")
+    print(f"Number of iterations for PI optimized: {len(pi_logs_optimized)}")
+    print(f"Convergence for PI optimized: {pi_result_optimized['converged']}")
+    print(f"Last Bellman residual for PI optimized: {pi_logs_optimized[-1]['bellman_residual']}")
+    
+    
+def pi_opt_ablation(env_configs, num_seeds=5):
+    """
+    Professional ablation study for PI optimizations.
+    
+    Args:
+        env_configs: List of (gamma, slip) tuples to test
+        num_seeds: Number of random seeds for robustness
+    
+    Returns:
+        List with results for statistical analysis
+    """
+    
+    configs = [
+        {"name": "baseline", "greedy_init": False, "howards_improvement": False},
+        {"name": "greedy_init_only", "greedy_init": True, "howards_improvement": False},
+        {"name": "howards_improvement_only", "greedy_init": False, "howards_improvement": True},
+        {"name": "full_optimized", "greedy_init": True, "howards_improvement": True},
+    ]
+    
+    tol = 1e-8
+    max_iters = 1000
+    eval_tol = 1e-8
+    max_eval_iters = 1000
+    
+    results = []
+    
+    for gamma, slip in env_configs:
+        for seed in range(num_seeds):
+            for config in configs:
+                print(f"Running {config['name']} with γ={gamma}, slip={slip}, seed={seed}")
+                mdp = build_4room(gamma=gamma, slip=slip, seed=seed)
+                result = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None, use_optimizations=True, opt_config=config)
+                metrics = {
+                    'config_name': config['name'],
+                    'gamma': gamma,
+                    'slip': slip,
+                    'seed': seed,
+                    'outer_iterations': len(result['logs']),
+                    'total_bellman_backups': result['total_bellman_backups'],
+                    'wall_clock_time': result['run_time'],
+                    'converged': result['converged'],
+                    'final_bellman_residual': result['logs'][-1]['bellman_residual'],
+                    'convergence_achieved': result['converged'],
+                }
+                results.append(metrics)
+                
+    return results
+    
+    
     
 
 
 if __name__ == "__main__":
     # convergence_curves()
     # vi_pi_agreement()
-    gamma_slip_sensitivity()
+    # gamma_slip_sensitivity()
+    # vi_vs_vi_optimized()
     # debug_vi_pi_convergence()
+    # pi_vs_pi_optimized()
+    env_configs = [
+      (0.9, 0.0),   # Low γ, deterministic
+      (0.9, 0.3),   # Low γ, moderate stochasticity  
+      (0.9, 0.7),   # Low γ, high stochasticity
+      (0.99, 0.0),  # High γ, deterministic
+      (0.99, 0.3),  # High γ, moderate stochasticity
+      (0.99, 0.7),  # High γ, high stochasticity
+  ]
+    results = pi_opt_ablation(env_configs)
+    print(results)

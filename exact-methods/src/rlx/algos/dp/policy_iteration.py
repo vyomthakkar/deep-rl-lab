@@ -40,7 +40,7 @@ def policy_evaluation_sweep(pi, V, P, R, gamma):
             
 
 
-def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations: bool = False) -> dict:  # TODO(human): Design feature flag approach
+def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations: bool = False, opt_config: dict = {}) -> dict: 
     """Deterministic Policy Iteration (PI) for tabular MDPs.
 
     Procedure:
@@ -83,10 +83,10 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
     num_actions = mdp.P.shape[1]
     V = np.zeros(num_states, dtype=np.float64)
     
-    if use_optimizations:
+    pi = np.zeros(num_states, dtype=np.int64) # Zero initialization (original)
+    if use_optimizations and opt_config.get("greedy_init", False):
         pi = mdp.R.argmax(axis=1).astype(np.int64)  # Greedy initialization
-    else:
-        pi = np.zeros(num_states, dtype=np.int64)   # Zero initialization (original)
+           
     
     policy_l1_change = np.inf
     logs = []
@@ -111,7 +111,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
         Q = mdp.R + mdp.gamma * EV                          # shape: (S, A)
         
         
-        if use_optimizations:
+        if use_optimizations and opt_config.get("howards_improvement", False):
             # Howard's improvement: keep current action when tied
             pi_next = np.where(Q.max(axis=1) - Q[np.arange(num_states), pi] < 1e-12, 
                                pi, Q.argmax(axis=1)).astype(np.int64)
@@ -162,6 +162,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
         "Q": Q,
         "pi": pi,
         "logs": logs,
+        "total_bellman_backups": sum(log["bellman_backups"] for log in logs),
         "run_time": run_time,
         "converged": True
     }
