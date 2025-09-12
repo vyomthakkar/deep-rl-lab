@@ -2,8 +2,13 @@ from __future__ import annotations
 import os
 import sys
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 from itertools import product
+from scipy import stats
+from scipy.stats import mannwhitneyu, ttest_ind
+import json
 
 # Ensure 'src' is on sys.path when running this file directly
 _ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -577,25 +582,757 @@ def pi_opt_ablation(env_configs, num_seeds=5):
                 results.append(metrics)
                 
     return results
+
+
+# def analyze_ablation_results(results):
+#     """
+#     Analyze the results of the ablation study.
+#     """
+#     config2metrics = {}
+#     for log in results:
+#         if log['config_name'] not in config2metrics:
+#             config2metrics[log['config_name']] = []
+#         config2metrics[log['config_name']].append({
+#             'gamma': log['gamma'],
+#             'slip': log['slip'],
+#             'seed': log['seed'],
+#             'outer_iterations': log['outer_iterations'],
+#             'total_bellman_backups': log['total_bellman_backups'],
+#         })
+#     return config2metrics
+
+
+def analyze_ablation_results_professional(results):
+    """
+    Research-grade statistical analysis of ablation study results with:
+    - Metrics: outer_iterations (primary), total_bellman_backups, wall_clock_time
+    - Per-condition pairing by (gamma, slip, seed) vs baseline
+    - Multiple-comparison correction (Benjamini–Hochberg FDR)
+
+    Args:
+        results: List of experiment results from pi_opt_ablation()
+
+    Returns:
+        dict with comprehensive statistical analysis including:
+        - descriptive_stats: (outer_iterations only, for backward compatibility)
+        - confidence_intervals: (outer_iterations only)
+        - significance_results: (outer_iterations only)
+        - descriptive_stats_by_metric: dict[metric] -> DataFrame
+        - confidence_intervals_by_metric: dict[metric][config] -> {ci_lower, ci_upper}
+        - significance_results_by_metric: dict[metric][config] -> stats dict
+        - raw_data: DataFrame for further analysis
+        - sample_sizes: counts per config
+    """
+
+    # Convert to DataFrame for easier analysis
+    df = pd.DataFrame(results)
+
+    # Metrics to analyze
+    metrics = ['outer_iterations', 'total_bellman_backups', 'wall_clock_time']
+
+    # 1) Descriptive statistics per metric
+    descriptive_stats_by_metric = {}
+    for m in metrics:
+        descriptive_stats_by_metric[m] = (
+            df.groupby('config_name')[m]
+              .agg(['count', 'mean', 'std', 'min', 'max', 'median'])
+              .round(3)
+        )
+
+    # Backward-compat (outer_iterations only)
+    descriptive_stats = descriptive_stats_by_metric['outer_iterations']
+
+    # 2) Confidence Intervals (95%) per metric
+    def confidence_interval(data, confidence=0.95):
+        n = len(data)
+        if n < 2:
+            m = float(np.mean(data)) if n > 0 else float('nan')
+            return m, m
+        m = float(np.mean(data))
+        se = stats.sem(data)
+        h = se * stats.t.ppf((1 + confidence) / 2.0, n - 1)
+        return m - h, m + h
+
+    confidence_intervals_by_metric = {}
+    for m in metrics:
+        ci_results_m = {}
+        for config in df['config_name'].unique():
+            config_data = df[df['config_name'] == config][m]
+            ci_lower, ci_upper = confidence_interval(config_data)
+            ci_results_m[config] = {'ci_lower': ci_lower, 'ci_upper': ci_upper}
+        confidence_intervals_by_metric[m] = ci_results_m
+
+    # Backward-compat (outer_iterations only)
+    ci_results = confidence_intervals_by_metric['outer_iterations']
+
+    # Helper: Benjamini–Hochberg FDR adjustment
+    def bh_adjust(pvals_by_key, alpha=0.05):
+        if not pvals_by_key:
+            return {}
+        items = list(pvals_by_key.items())
+        # sort by p ascending
+        items_sorted = sorted(items, key=lambda kv: kv[1])
+        m = len(items_sorted)
+        adj = {}
+        prev = 1.0
+        for i in range(m, 0, -1):  # from largest rank to 1
+            key, p = items_sorted[i - 1]
+            q = min(prev, p * m / i)
+            adj[key] = min(q, 1.0)
+            prev = adj[key]
+        return adj
+
+    # 3) Statistical Tests vs Baseline using paired differences per condition
+    # Pair by (gamma, slip, seed) to control for environment/seeding
+    significance_results_by_metric = {}
+    for m in metrics:
+        # Build baseline frame
+        base = df[df['config_name'] == 'baseline'][['gamma', 'slip', 'seed', m]]
+        if base.empty:
+            print("Warning: No baseline data found!")
+            return {'error': 'No baseline configuration found in results'}
+
+        sig_m = {}
+        pvals = {}
+        for config in ['greedy_init_only', 'howards_improvement_only', 'full_optimized']:
+            cfg = df[df['config_name'] == config][['gamma', 'slip', 'seed', m]]
+            if cfg.empty:
+                continue
+            merged = pd.merge(
+                base, cfg, on=['gamma', 'slip', 'seed'], how='inner', suffixes=('_base', '_cfg')
+            )
+            if merged.empty:
+                continue
+            diff = merged[f'{m}_base'] - merged[f'{m}_cfg']
+            diff = diff.astype(float)
+            # Wilcoxon signed-rank test on paired differences
+            try:
+                stat_w, p_value = stats.wilcoxon(diff)
+            except ValueError:
+                # e.g., all differences are zero
+                p_value = 1.0
+
+            # Paired Cohen's d_z
+            sd = float(diff.std(ddof=1))
+            if sd == 0 or np.isnan(sd):
+                d = 0.0
+            else:
+                d = float(diff.mean()) / sd
+
+            # Effect magnitude
+            ad = abs(d)
+            if ad < 0.2:
+                effect_magnitude = 'negligible'
+            elif ad < 0.5:
+                effect_magnitude = 'small'
+            elif ad < 0.8:
+                effect_magnitude = 'medium'
+            else:
+                effect_magnitude = 'large'
+
+            # Raw means (matched sets)
+            baseline_mean = float(merged[f'{m}_base'].mean())
+            baseline_std = float(merged[f'{m}_base'].std(ddof=1))
+            config_mean = float(merged[f'{m}_cfg'].mean())
+            config_std = float(merged[f'{m}_cfg'].std(ddof=1))
+            improvement = baseline_mean - config_mean
+            improvement_pct = (improvement / baseline_mean) * 100 if baseline_mean != 0 else np.nan
+
+            sig_m[config] = {
+                'p_value': round(float(p_value), 6),
+                'significant': bool(p_value < 0.05),
+                'cohens_d': round(float(d), 3),
+                'effect_magnitude': effect_magnitude,
+                'improvement': round(float(improvement), 2),
+                'improvement_pct': round(float(improvement_pct), 1) if np.isfinite(improvement_pct) else np.nan,
+                'baseline_mean': round(baseline_mean, 2),
+                'config_mean': round(config_mean, 2),
+                'baseline_std': round(baseline_std, 2) if not np.isnan(baseline_std) else 0.0,
+                'config_std': round(config_std, 2) if not np.isnan(config_std) else 0.0,
+                'ci_lower': round(confidence_intervals_by_metric[m][config]['ci_lower'], 2),
+                'ci_upper': round(confidence_intervals_by_metric[m][config]['ci_upper'], 2),
+            }
+            pvals[config] = float(p_value)
+
+        # Multiple-comparison correction across configs for this metric
+        adj = bh_adjust(pvals)
+        for config, q in adj.items():
+            if config in sig_m:
+                sig_m[config]['p_value_adj'] = round(q, 6)
+                sig_m[config]['significant_adj'] = bool(q < 0.05)
+
+        significance_results_by_metric[m] = sig_m
+
+    # Backward-compat top-level views for outer_iterations
+    significance_results = significance_results_by_metric['outer_iterations']
+
+    return {
+        'descriptive_stats': descriptive_stats,
+        'confidence_intervals': ci_results,
+        'significance_results': significance_results,
+        'descriptive_stats_by_metric': descriptive_stats_by_metric,
+        'confidence_intervals_by_metric': confidence_intervals_by_metric,
+        'significance_results_by_metric': significance_results_by_metric,
+        'raw_data': df,
+        'sample_sizes': df.groupby('config_name').size().to_dict(),
+    }
+
+
+def plot_ablation_analysis(analysis_results, save_path=None, metrics=(
+    'outer_iterations', 'total_bellman_backups', 'wall_clock_time'
+), fig_size=(12, 8), title_fontsize=14):
+    """
+    Create publication-quality ablation visualizations for multiple metrics.
+
+    Args:
+        analysis_results: Output from analyze_ablation_results_professional()
+        save_path: Optional base path to save figures. If provided, will save
+                   one figure per metric with suffixes: _outer, _backups, _time.
+        metrics: Iterable of metric names to plot.
+        fig_size: Tuple width,height in inches for the 2x2 figure (default (12, 8)).
+        title_fontsize: Suptitle font size (default 14).
+    Returns:
+        The matplotlib Figure for the first metric plotted (for backward compatibility).
+    """
+
+    # Styling
+    plt.style.use('default')
+    sns.set_palette("husl")
+
+    df = analysis_results['raw_data']
+
+    # Access nested results
+    sig_by_metric = analysis_results.get('significance_results_by_metric', {})
+    ci_by_metric = analysis_results.get('confidence_intervals_by_metric', {})
+
+    # Backward-compat fallbacks for outer_iterations
+    sig_top = analysis_results.get('significance_results', {})
+    ci_top = analysis_results.get('confidence_intervals', {})
+
+    # Config order and labels
+    config_order = ['baseline', 'greedy_init_only', 'howards_improvement_only', 'full_optimized']
+    config_labels = ['Baseline', 'Smart Init', "Howard's Only", 'Full Optimized']
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+
+    metric_titles = {
+        'outer_iterations': 'Outer Iterations',
+        'total_bellman_backups': 'Total Bellman Backups',
+        'wall_clock_time': 'Wall-Clock Time (s)'
+    }
+    metric_suffix = {
+        'outer_iterations': 'outer',
+        'total_bellman_backups': 'backups',
+        'wall_clock_time': 'time'
+    }
+
+    first_fig = None
+
+    def plot_single_metric(metric: str):
+        fig, axes = plt.subplots(2, 2, figsize=fig_size)
+        fig.suptitle(f"PI Optimization Ablation Study — {metric_titles.get(metric, metric)}",
+                     fontsize=title_fontsize, fontweight='bold')
+
+        # Pick the right stats containers
+        if metric == 'outer_iterations':
+            sig_results = sig_top
+            ci_results = ci_top
+        else:
+            sig_results = sig_by_metric.get(metric, {})
+            ci_results = ci_by_metric.get(metric, {})
+
+        # Plot 1: Main Results with Confidence Intervals
+        ax1 = axes[0, 0]
+        means = [df[df['config_name'] == config][metric].mean() for config in config_order]
+        ci_lowers = [ci_results.get(config, {}).get('ci_lower', np.nan) for config in config_order]
+        ci_uppers = [ci_results.get(config, {}).get('ci_upper', np.nan) for config in config_order]
+
+        yerr_lower = [means[i] - ci_lowers[i] for i in range(len(means))]
+        yerr_upper = [ci_uppers[i] - means[i] for i in range(len(means))]
+
+        bars = ax1.bar(config_labels, means, yerr=[yerr_lower, yerr_upper],
+                       capsize=5, color=colors, alpha=0.8, edgecolor='black')
+
+        # Significance stars (use adjusted p-values if available)
+        for i, (config, bar) in enumerate(zip(config_order[1:], bars[1:]), 1):
+            if config in sig_results:
+                p = sig_results[config].get('p_value_adj', sig_results[config].get('p_value', 1.0))
+                significant = p < 0.05
+                if significant:
+                    if p < 0.001:
+                        star = '***'
+                    elif p < 0.01:
+                        star = '**'
+                    else:
+                        star = '*'
+                    ax1.text(bar.get_x() + bar.get_width() / 2,
+                             bar.get_height() + (yerr_upper[i] if np.isfinite(yerr_upper[i]) else 0.0),
+                             star, ha='center', va='bottom', fontsize=14, fontweight='bold')
+
+        ax1.set_ylabel(f"{metric_titles.get(metric, metric)} (Mean ± 95% CI)", fontweight='bold')
+        ax1.set_title('Main Results with Statistical Significance', fontweight='bold')
+        ax1.grid(True, alpha=0.3)
+
+        for bar, mean in zip(bars, means):
+            ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                     f'{mean:.2f}', ha='center', va='bottom', fontweight='bold')
+
+        # Plot 2: Effect Sizes (Cohen's d)
+        ax2 = axes[0, 1]
+        configs_for_effect = ['greedy_init_only', 'howards_improvement_only', 'full_optimized']
+        effect_labels = ['Smart Init', "Howard's Only", 'Full Optimized']
+
+        effect_sizes = [sig_results.get(c, {}).get('cohens_d', 0.0) for c in configs_for_effect]
+        pvals_adj = [sig_results.get(c, {}).get('p_value_adj', sig_results.get(c, {}).get('p_value', 1.0))
+                     for c in configs_for_effect]
+
+        # Color by significance and direction
+        effect_colors = []
+        for d, p in zip(effect_sizes, pvals_adj):
+            if p < 0.05 and d > 0:
+                effect_colors.append('green')  # significant improvement
+            elif p < 0.05 and d < 0:
+                effect_colors.append('red')    # significant regression
+            else:
+                effect_colors.append('gray')   # not significant
+
+        y_pos = range(len(effect_sizes))
+        bars_effect = ax2.barh(y_pos, effect_sizes, color=effect_colors, alpha=0.8, edgecolor='black')
+
+        # Symmetric thresholds
+        for x in (-0.8, -0.5, -0.2, 0, 0.2, 0.5, 0.8):
+            style = '-' if abs(x) == 0.8 else '--' if abs(x) in (0.5, 0.2) else '-'
+            alpha = 0.9 if abs(x) == 0.8 else 0.5
+            col = 'gray' if x != 0 else 'black'
+            ax2.axvline(x=x, color=col, linestyle=style, alpha=alpha)
+
+        ax2.set_yticks(list(y_pos))
+        ax2.set_yticklabels(effect_labels)
+        ax2.set_xlabel("Cohen's d (Effect Size)", fontweight='bold')
+        ax2.set_title('Effect Sizes vs Baseline (paired, BH-corrected)', fontweight='bold')
+        ax2.grid(True, alpha=0.3)
+
+        # Effect size text
+        for bar, d, p in zip(bars_effect, effect_sizes, pvals_adj):
+            mark = ' *' if p < 0.05 else ''
+            ax2.text(bar.get_width() + (0.05 if d >= 0 else -0.1),
+                     bar.get_y() + bar.get_height() / 2,
+                     f'{d:.2f}{mark}', va='center', fontweight='bold')
+
+        # Plot 3: Distribution Comparison (Box Plots)
+        ax3 = axes[1, 0]
+        box_data = [df[df['config_name'] == config][metric].values for config in config_order]
+        box_plot = ax3.boxplot(
+            box_data, labels=config_labels, patch_artist=True, showmeans=True,
+            meanline=False, meanprops=dict(marker='D', markerfacecolor='red')
+        )
+        for patch, color in zip(box_plot['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+        ax3.set_ylabel(metric_titles.get(metric, metric), fontweight='bold')
+        ax3.set_title('Distribution Comparison', fontweight='bold')
+        ax3.grid(True, alpha=0.3)
+
+        # Plot 4: Statistical Summary Table
+        ax4 = axes[1, 1]
+        ax4.axis('off')
+
+        table_data = []
+        headers = ['Configuration', 'Mean ± SD', 'Improvement', 'p (BH-adj)', 'Effect Size', 'Magnitude']
+
+        # Baseline row
+        base_mean = df[df['config_name'] == 'baseline'][metric].mean()
+        base_std = df[df['config_name'] == 'baseline'][metric].std()
+        table_data.append(['Baseline', f'{base_mean:.2f} ± {base_std:.2f}', '-', '-', '-', '-'])
+
+        for config, label in zip(['greedy_init_only', 'howards_improvement_only', 'full_optimized'],
+                                  ['Smart Init', "Howard's Only", 'Full Optimized']):
+            if config in sig_results:
+                result = sig_results[config]
+                mean_str = f"{result['config_mean']:.2f} ± {result['config_std']:.2f}"
+                improvement_str = f"{result['improvement']:.2f} ({result['improvement_pct']:.1f}%)"
+                p_use = result.get('p_value_adj', result.get('p_value', 1.0))
+                p_str = f"{p_use:.3f}" if p_use >= 0.001 else "<0.001"
+                effect_str = f"{result['cohens_d']:.2f}"
+                magnitude_str = result['effect_magnitude']
+                if p_use < 0.05:
+                    p_str += '*'
+                table_data.append([label, mean_str, improvement_str, p_str, effect_str, magnitude_str])
+
+        table = ax4.table(cellText=table_data, colLabels=headers, cellLoc='center', loc='center')
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1.2, 2)
+        for i in range(len(headers)):
+            table[(0, i)].set_facecolor('#40466e')
+            table[(0, i)].set_text_props(weight='bold', color='white')
+        for i, row in enumerate(table_data[1:], 1):
+            if '*' in row[3]:
+                for j in range(len(headers)):
+                    table[(i, j)].set_facecolor('#e8f5e8')
+        ax4.set_title('Statistical Summary', fontweight='bold', pad=20)
+
+        fig.text(0.5, 0.02,
+                 '* p < 0.05 (BH-adjusted). Vertical lines: ±0.2, ±0.5, ±0.8 thresholds.\nError bars show 95% confidence intervals.',
+                 ha='center', va='bottom', fontsize=10, style='italic')
+
+        plt.tight_layout(rect=[0, 0.05, 1, 0.95])
+
+        # Save per metric
+        if save_path:
+            base, ext = os.path.splitext(save_path)
+            if not ext:
+                ext = '.png'
+            suffix = metric_suffix.get(metric, metric)
+            out_path = f"{base}_{suffix}{ext}"
+            plt.savefig(out_path, dpi=300, bbox_inches='tight')
+            print(f"Figure saved to: {out_path}")
+
+        plt.show()
+        return fig
+
+    first_metric = None
+    for metric in metrics:
+        if first_metric is None:
+            first_metric = metric
+        fig = plot_single_metric(metric)
+        if first_fig is None and metric == first_metric:
+            first_fig = fig
+
+    return first_fig
+
+
+def generate_ablation_report(analysis_results):
+    """
+    Generate a comprehensive research-grade text summary of ablation results.
     
+    Args:
+        analysis_results: Output from analyze_ablation_results_professional()
     
+    Returns:
+        str: Markdown-formatted research report
+    """
     
+    sig_results = analysis_results['significance_results']
+    descriptive_stats = analysis_results['descriptive_stats']
+    sample_sizes = analysis_results['sample_sizes']
+    
+    report = []
+    report.append("# PI Optimization Ablation Study - Research Report\n")
+    
+    # Executive Summary
+    report.append("## Executive Summary\n")
+    
+    # Find best performing configuration
+    baseline_mean = descriptive_stats.loc['baseline', 'mean']
+    improvements = {config: result['improvement'] for config, result in sig_results.items()}
+    best_config = max(improvements, key=improvements.get) if improvements else None
+    
+    if best_config and sig_results[best_config]['significant']:
+        report.append(f"**Key Finding:** {best_config.replace('_', ' ').title()} provides the most significant improvement "
+                     f"over baseline, reducing iterations by {sig_results[best_config]['improvement']:.1f} "
+                     f"({sig_results[best_config]['improvement_pct']:.1f}%) with "
+                     f"{sig_results[best_config]['effect_magnitude']} effect size.\n")
+    else:
+        report.append("**Key Finding:** No individual optimization component showed statistically significant improvement over baseline.\n")
+    
+    # Statistical Summary
+    significant_configs = [config for config, result in sig_results.items() if result['significant']]
+    report.append(f"**Statistical Summary:** {len(significant_configs)} out of {len(sig_results)} "
+                 f"optimization components showed statistically significant improvements (p < 0.05).\n")
+    
+    # Detailed Findings
+    report.append("## Detailed Component Analysis\n")
+    
+    # Sort configurations by improvement magnitude
+    sorted_configs = sorted(sig_results.items(), key=lambda x: x[1]['improvement'], reverse=True)
+    
+    for i, (config, result) in enumerate(sorted_configs, 1):
+        config_name = config.replace('_', ' ').title()
+        
+        report.append(f"### {i}. {config_name}\n")
+        
+        # Performance metrics
+        report.append(f"- **Performance:** {result['config_mean']:.1f} ± {result['config_std']:.1f} iterations "
+                     f"(vs baseline: {result['baseline_mean']:.1f} ± {result['baseline_std']:.1f})\n")
+        
+        # Improvement
+        if result['improvement'] > 0:
+            report.append(f"- **Improvement:** {result['improvement']:.1f} iterations ({result['improvement_pct']:.1f}% reduction)\n")
+        else:
+            report.append(f"- **Performance Change:** {abs(result['improvement']):.1f} iterations worse ({abs(result['improvement_pct']):.1f}% increase)\n")
+        
+        # Statistical significance
+        if result['significant']:
+            report.append(f"- **Statistical Significance:** Significant (p = {result['p_value']:.3f})\n")
+        else:
+            report.append(f"- **Statistical Significance:** Not significant (p = {result['p_value']:.3f})\n")
+        
+        # Effect size
+        report.append(f"- **Effect Size:** Cohen's d = {result['cohens_d']:.3f} ({result['effect_magnitude']} effect)\n")
+        
+        # Confidence interval
+        report.append(f"- **95% CI:** [{result['ci_lower']:.1f}, {result['ci_upper']:.1f}] iterations\n")
+        
+        # Practical interpretation
+        if result['significant'] and abs(result['cohens_d']) >= 0.5:
+            report.append(f"- **Interpretation:** **Recommended** - Shows both statistical and practical significance\n")
+        elif result['significant']:
+            report.append(f"- **Interpretation:** Statistically significant but small practical effect\n")
+        elif abs(result['cohens_d']) >= 0.5:
+            report.append(f"- **Interpretation:** Large practical effect but not statistically significant (may need more data)\n")
+        else:
+            report.append(f"- **Interpretation:** Neither statistically nor practically significant\n")
+        
+        report.append("")  # Empty line
+    
+    # Component Interaction Analysis
+    report.append("## Component Interaction Analysis\n")
+    
+    if 'full_optimized' in sig_results:
+        full_improvement = sig_results['full_optimized']['improvement']
+        
+        # Calculate expected additive effect
+        individual_improvements = []
+        for config in ['greedy_init_only', 'howards_improvement_only']:
+            if config in sig_results:
+                individual_improvements.append(sig_results[config]['improvement'])
+        
+        if len(individual_improvements) == 2:
+            expected_additive = sum(individual_improvements)
+            actual_combined = full_improvement
+            
+            if actual_combined > expected_additive * 1.1:  # 10% threshold
+                interaction_type = "**synergistic**"
+                interaction_desc = "Components work better together than individually"
+            elif actual_combined < expected_additive * 0.9:
+                interaction_type = "**antagonistic**"
+                interaction_desc = "Components interfere with each other"
+            else:
+                interaction_type = "**additive**"
+                interaction_desc = "Components contribute independently"
+            
+            report.append(f"The combined optimization shows {interaction_type} interaction.\n")
+            report.append(f"- Expected additive improvement: {expected_additive:.1f} iterations\n")
+            report.append(f"- Actual combined improvement: {actual_combined:.1f} iterations\n")
+            report.append(f"- Interpretation: {interaction_desc}\n\n")
+    
+    # Recommendations
+    report.append("## Practical Recommendations\n")
+    
+    # Implementation priority
+    significant_and_practical = [
+        (config, result) for config, result in sig_results.items() 
+        if result['significant'] and abs(result['cohens_d']) >= 0.5
+    ]
+    
+    if significant_and_practical:
+        report.append("### High Priority (Implement First)\n")
+        for config, result in sorted(significant_and_practical, key=lambda x: x[1]['improvement'], reverse=True):
+            config_name = config.replace('_', ' ').title()
+            report.append(f"- **{config_name}**: {result['improvement']:.1f} iteration improvement "
+                         f"({result['effect_magnitude']} effect, p = {result['p_value']:.3f})\n")
+        report.append("")
+    
+    # Statistical but not practical
+    statistical_only = [
+        (config, result) for config, result in sig_results.items() 
+        if result['significant'] and abs(result['cohens_d']) < 0.5
+    ]
+    
+    if statistical_only:
+        report.append("### Medium Priority (Consider Implementing)\n")
+        for config, result in statistical_only:
+            config_name = config.replace('_', ' ').title()
+            report.append(f"- **{config_name}**: Statistically significant but small practical effect\n")
+        report.append("")
+    
+    # Not recommended
+    not_significant = [
+        (config, result) for config, result in sig_results.items() 
+        if not result['significant']
+    ]
+    
+    if not_significant:
+        report.append("### Low Priority (Not Recommended)\n")
+        for config, result in not_significant:
+            config_name = config.replace('_', ' ').title()
+            report.append(f"- **{config_name}**: No significant improvement over baseline\n")
+        report.append("")
+    
+    # Methodology
+    report.append("## Methodology Summary\n")
+    report.append(f"- **Sample Sizes:** {list(sample_sizes.values())} experiments per configuration\n")
+    report.append(f"- **Statistical Tests:** Mann-Whitney U test (non-parametric)\n")
+    report.append(f"- **Effect Size:** Cohen's d with pooled standard deviation\n")
+    report.append(f"- **Significance Level:** α = 0.05\n")
+    report.append(f"- **Confidence Intervals:** 95% CI using t-distribution\n")
+    report.append(f"- **Effect Size Thresholds:** Small (0.2), Medium (0.5), Large (0.8)\n\n")
+    
+    # Future Work
+    report.append("## Suggestions for Future Work\n")
+    report.append("- Test combinations of significant components for synergistic effects\n")
+    report.append("- Evaluate performance across different environment types (gridworld variants)\n")
+    report.append("- Investigate computational cost vs. performance trade-offs\n")
+    report.append("- Replicate findings with larger sample sizes for marginal effects\n")
+    
+    return "\n".join(report)
+
+
+def run_complete_ablation_study(env_configs=None, num_seeds=5, save_results=True):
+    """
+    Complete research-grade ablation study pipeline.
+    
+    Args:
+        env_configs: List of (gamma, slip) tuples to test
+        num_seeds: Number of random seeds for robustness  
+        save_results: Whether to save results to files
+    
+    Returns:
+        dict: Complete analysis results
+    """
+    
+    if env_configs is None:
+        env_configs = [
+            (0.9, 0.0),   # Low γ, deterministic
+            (0.9, 0.3),   # Low γ, moderate stochasticity
+            (0.99, 0.0),  # High γ, deterministic
+            (0.99, 0.3),  # High γ, moderate stochasticity
+        ]
+    
+    print("🔬 Starting Complete Ablation Study")
+    print(f"Environments: {len(env_configs)}")
+    print(f"Seeds per config: {num_seeds}")
+    print(f"Total experiments: {len(env_configs) * num_seeds * 4}\n")
+    
+    # 1. Run experiments
+    print("📊 Phase 1: Running experiments...")
+    results = pi_opt_ablation(env_configs, num_seeds=num_seeds)
+    print(f"✅ Completed {len(results)} experiments\n")
+    
+    # 2. Statistical analysis  
+    print("📈 Phase 2: Statistical analysis...")
+    analysis = analyze_ablation_results_professional(results)
+    print("✅ Statistical analysis complete\n")
+    
+    # 3. Visualizations
+    print("🎨 Phase 3: Generating visualizations...")
+    if save_results:
+        fig = plot_ablation_analysis(analysis, save_path='pi_ablation_analysis.png')
+    else:
+        fig = plot_ablation_analysis(analysis)
+    print("✅ Visualizations complete\n")
+    
+    # 4. Research report
+    print("📝 Phase 4: Generating research report...")
+    report = generate_ablation_report(analysis)
+    print("✅ Research report generated\n")
+    
+    # 5. Save results
+    if save_results:
+        print("💾 Phase 5: Saving results...")
+        
+        # Helper function to convert numpy types to JSON serializable types
+        def make_json_serializable(obj):
+            """Convert numpy types to JSON serializable types (NumPy 2.0 compatible)."""
+            if isinstance(obj, dict):
+                return {k: make_json_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [make_json_serializable(item) for item in obj]
+            elif isinstance(obj, (np.bool_, bool)):
+                return bool(obj)
+            elif isinstance(obj, (np.integer, int)):
+                return int(obj)
+            elif isinstance(obj, (np.floating, float)):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif hasattr(obj, 'item'):  # Handle numpy scalars
+                return obj.item()
+            else:
+                return obj
+        
+        # Save statistical results as JSON with type conversion
+        stats_output = {
+            'significance_results': make_json_serializable(analysis.get('significance_results', {})),
+            'significance_results_by_metric': make_json_serializable(analysis.get('significance_results_by_metric', {})),
+            'sample_sizes': make_json_serializable(analysis.get('sample_sizes', {})),
+            'descriptive_stats': make_json_serializable(analysis.get('descriptive_stats', {}).to_dict() if hasattr(analysis.get('descriptive_stats', {}), 'to_dict') else analysis.get('descriptive_stats', {})),
+            'descriptive_stats_by_metric': make_json_serializable({k: v.to_dict() for k, v in analysis.get('descriptive_stats_by_metric', {}).items()}),
+            'confidence_intervals': make_json_serializable(analysis.get('confidence_intervals', {})),
+            'confidence_intervals_by_metric': make_json_serializable(analysis.get('confidence_intervals_by_metric', {})),
+        }
+        
+        with open('pi_ablation_statistics.json', 'w') as f:
+            json.dump(stats_output, f, indent=2)
+        print("✅ Saved: pi_ablation_statistics.json")
+        
+        # Save research report
+        with open('pi_ablation_report.md', 'w') as f:
+            f.write(report)
+        print("✅ Saved: pi_ablation_report.md")
+        
+        # Save raw results
+        with open('pi_ablation_raw_data.json', 'w') as f:
+            json.dump(results, f, indent=2)
+        print("✅ Saved: pi_ablation_raw_data.json")
+        
+        print("\n📁 All results saved to current directory")
+    
+    # 6. Print summary
+    print("\n" + "="*60)
+    print("🎯 ABLATION STUDY COMPLETE")
+    print("="*60)
+    print(report[:500] + "...\n")
+    print("Full report available in analysis results or saved file.")
+    
+    return {
+        'analysis': analysis,
+        'report': report,
+        'raw_results': results,
+        'figure': fig if 'fig' in locals() else None
+    }
 
 
 if __name__ == "__main__":
+    # ================================
+    # RESEARCH-GRADE ABLATION STUDY
+    # ================================
+    
+    # Uncomment individual functions for testing:
     # convergence_curves()
-    # vi_pi_agreement()
+    # vi_pi_agreement()  
     # gamma_slip_sensitivity()
     # vi_vs_vi_optimized()
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
+    
+    # Run complete professional ablation study
+    print("🚀 Running Professional Ablation Study Pipeline\n")
+    
+    # Define environment configurations for comprehensive testing
     env_configs = [
-      (0.9, 0.0),   # Low γ, deterministic
-      (0.9, 0.3),   # Low γ, moderate stochasticity  
-      (0.9, 0.7),   # Low γ, high stochasticity
-      (0.99, 0.0),  # High γ, deterministic
-      (0.99, 0.3),  # High γ, moderate stochasticity
-      (0.99, 0.7),  # High γ, high stochasticity
-  ]
-    results = pi_opt_ablation(env_configs)
-    print(results)
+        (0.9, 0.0),   # Low γ, deterministic
+        (0.9, 0.3),   # Low γ, moderate stochasticity  
+        (0.99, 0.0),  # High γ, deterministic
+        (0.99, 0.3),  # High γ, moderate stochasticity
+    ]
+    
+    # Run the complete integrated ablation study
+    complete_results = run_complete_ablation_study(
+        env_configs=env_configs,
+        num_seeds=5,  # Increase for more robust statistics
+        save_results=True  # Save all outputs to files
+    )
+    
+    # Access individual components if needed:
+    # analysis_results = complete_results['analysis']
+    # research_report = complete_results['report'] 
+    # raw_experiment_data = complete_results['raw_results']
+    # matplotlib_figure = complete_results['figure']
+    
+    print("\n🎉 Professional ablation study complete!")
+    print("📊 Check generated files:")
+    print("  - pi_ablation_analysis.png (Publication figure)")
+    print("  - pi_ablation_report.md (Research report)")
+    print("  - pi_ablation_statistics.json (Statistical results)")
+    print("  - pi_ablation_raw_data.json (Raw experimental data)")
