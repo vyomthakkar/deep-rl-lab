@@ -1291,6 +1291,48 @@ def run_complete_ablation_study(env_configs=None, num_seeds=5, save_results=True
         'raw_results': results,
         'figure': fig if 'fig' in locals() else None
     }
+    
+    
+def compute_softvi_return(mdp, V):
+    terminal_states = mdp.terminal_mask
+    non_terminal_states = ~terminal_states
+    
+    average_return = V[non_terminal_states].mean()
+    
+    return average_return
+    
+# C.4 Softness and Entropy
+# 
+# For τ grid, plot **avg policy entropy** and **return** vs τ.
+# Verify numerically that as τ→0, ||V_soft−V_hard||∞ < 1e−4.
+# 
+def softness_and_entropy():
+    
+    tau_grid = np.linspace(0.01, 1.0, 10)
+    return_grid = []
+    entropy_grid = []
+    
+    gamma = 0.99
+    slip = 0.0
+    tol = 1e-8
+    max_iters = 1000
+    
+    for tau in tau_grid:
+        mdp = build_4room(gamma=gamma, slip=slip, step_penalty=-0.1)
+        result = run_soft_vi(mdp, tau=tau, tol=tol, max_iters=max_iters, logger=None)
+        average_return = compute_softvi_return(mdp, result["V"])
+        final_entropy = result["logs"][-1].get("entropy", 0.0)
+        print(f"tau: {tau}, average_return: {average_return}, average_entropy: {final_entropy}")
+        return_grid.append(average_return)
+        entropy_grid.append(final_entropy)
+        
+    # plt.plot(tau_grid, return_grid, label="Average Return")
+    plt.plot(tau_grid, entropy_grid, label="Entropy")
+    plt.legend()
+    plt.show()
+        
+    
+    return return_grid, entropy_grid
 
 
 if __name__ == "__main__":
@@ -1305,34 +1347,35 @@ if __name__ == "__main__":
     # vi_vs_vi_optimized()
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
+    softness_and_entropy()
     
-    # Run complete professional ablation study
-    print("🚀 Running Professional Ablation Study Pipeline\n")
+    # # Run complete professional ablation study
+    # print("🚀 Running Professional Ablation Study Pipeline\n")
     
-    # Define environment configurations for comprehensive testing
-    env_configs = [
-        (0.9, 0.0),   # Low γ, deterministic
-        (0.9, 0.3),   # Low γ, moderate stochasticity  
-        (0.99, 0.0),  # High γ, deterministic
-        (0.99, 0.3),  # High γ, moderate stochasticity
-    ]
+    # # Define environment configurations for comprehensive testing
+    # env_configs = [
+    #     (0.9, 0.0),   # Low γ, deterministic
+    #     (0.9, 0.3),   # Low γ, moderate stochasticity  
+    #     (0.99, 0.0),  # High γ, deterministic
+    #     (0.99, 0.3),  # High γ, moderate stochasticity
+    # ]
     
-    # Run the complete integrated ablation study
-    complete_results = run_complete_ablation_study(
-        env_configs=env_configs,
-        num_seeds=5,  # Increase for more robust statistics
-        save_results=True  # Save all outputs to files
-    )
+    # # Run the complete integrated ablation study
+    # complete_results = run_complete_ablation_study(
+    #     env_configs=env_configs,
+    #     num_seeds=5,  # Increase for more robust statistics
+    #     save_results=True  # Save all outputs to files
+    # )
     
-    # Access individual components if needed:
-    # analysis_results = complete_results['analysis']
-    # research_report = complete_results['report'] 
-    # raw_experiment_data = complete_results['raw_results']
-    # matplotlib_figure = complete_results['figure']
+    # # Access individual components if needed:
+    # # analysis_results = complete_results['analysis']
+    # # research_report = complete_results['report'] 
+    # # raw_experiment_data = complete_results['raw_results']
+    # # matplotlib_figure = complete_results['figure']
     
-    print("\n🎉 Professional ablation study complete!")
-    print("📊 Check generated files:")
-    print("  - pi_ablation_analysis.png (Publication figure)")
-    print("  - pi_ablation_report.md (Research report)")
-    print("  - pi_ablation_statistics.json (Statistical results)")
-    print("  - pi_ablation_raw_data.json (Raw experimental data)")
+    # print("\n🎉 Professional ablation study complete!")
+    # print("📊 Check generated files:")
+    # print("  - pi_ablation_analysis.png (Publication figure)")
+    # print("  - pi_ablation_report.md (Research report)")
+    # print("  - pi_ablation_statistics.json (Statistical results)")
+    # print("  - pi_ablation_raw_data.json (Raw experimental data)")

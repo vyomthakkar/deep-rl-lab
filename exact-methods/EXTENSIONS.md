@@ -99,3 +99,9 @@ for it in range(max_eval_iters):
   - `algo=soft_vi`: `tau=float`, `tau_schedule={const,decay}`, `max_iters`, `tol`.
 
 
+## Setting the right temperature and Entropy for Soft Value Iteration:
+
+- It is very important (if you set temperature) to visualize and understand the entropy (average entropy for all states or ideally average entropy for non-terminal states) and how it changes over iterations.
+- Also, if you have a deterministic number of states and actions in the environment, you can actually compute the entropy of a uniform/random policy, which is just: S*log(|A|)
+- Comparing this theoretical bound of the max entropy of the environment given the set of valid states and actions, with the current entropy give us an indication of how "random/stochastic" the optimal policy is, when compared to the uniform random policy!
+- Plotting Temperature vs Policy Entropy allows us to visualize this and choose an appropriate setting of temperature.
