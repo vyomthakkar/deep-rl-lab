@@ -26,12 +26,15 @@ from rlx.algos.dp.policy_iteration import run_pi
 
 def soft_vi():
     print("=============== SOFT VI =============== ")
-    mdp = build_4room(gamma=0.99, slip=0.0)
+    slip = 0.0
+    step_penalty = 0.1
+    mdp = build_4room(gamma=0.99, slip=slip, step_penalty=step_penalty)
     shape = tuple(mdp.extras.get("shape", ()))
     print(
         f"Built 4-room MDP with shape={shape}, states={mdp.P.shape[0]}, actions={mdp.P.shape[1]}"
     )
-    tau = 1e-6
+    # tau = 1e-6
+    tau = 0.01
     tol = 1e-8
     # tol = 1e-5
     max_iters = 1000
@@ -45,9 +48,15 @@ def soft_vi():
     delta = [log["delta"] for log in logs]
     policy_l1_change = [log["policy_l1_change"] for log in logs]
     entropy = [log["entropy"] for log in logs]
+    average_entropy = [log["average_entropy"] for log in logs]
+    average_return = [log["average_return"] for log in logs]
     
-    # plt.plot(entropy)
-    # plt.show()
+    plt.plot(average_return)
+    plt.title(f"Iterations vs Entropy (tau={tau}); Env config: gamma={mdp.gamma}, slip={slip}, step_penalty={step_penalty}")
+    plt.xlabel("Iterations")
+    plt.ylabel("Entropy")
+    plt.grid(True)
+    plt.show()
     
     print(f"{lastV=}")
     return delta
@@ -1340,6 +1349,8 @@ if __name__ == "__main__":
     # RESEARCH-GRADE ABLATION STUDY
     # ================================
     
+    soft_vi()
+    
     # Uncomment individual functions for testing:
     # convergence_curves()
     # vi_pi_agreement()  
@@ -1347,7 +1358,7 @@ if __name__ == "__main__":
     # vi_vs_vi_optimized()
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
-    softness_and_entropy()
+    # softness_and_entropy()
     
     # # Run complete professional ablation study
     # print("🚀 Running Professional Ablation Study Pipeline\n")

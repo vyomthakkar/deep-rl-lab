@@ -91,6 +91,12 @@ def run_vi(mdp, tol: float, max_iters: int, logger, use_optimizations: bool = Fa
         policy_l1_change = np.sum(pi_next != pi).item()         # Number of states with policy change
         wall_clock_time = time.time() - start_time
         
+        #Track more refined return
+        terminal_states = mdp.terminal_mask
+        non_terminal_states = ~terminal_states
+        
+        average_return = V_next[non_terminal_states].mean()
+        
         logs.append({
             "i": i,
             "delta": delta,
@@ -99,6 +105,7 @@ def run_vi(mdp, tol: float, max_iters: int, logger, use_optimizations: bool = Fa
             "entropy": 0.0,  # Always 0.0 for deterministic VI policy
             "wall_clock_time": wall_clock_time,
             "bellman_backups": num_states * num_actions, 
+            "average_return": float(average_return),
             # standardized fields across algos
             "iter": int(i),
             "algo": "vi",

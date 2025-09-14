@@ -120,12 +120,25 @@ def run_soft_vi(mdp, tau: float, tol: float, max_iters: int, logger) -> dict:
         entropy = -np.sum(pi_prob_next * np.log(pi_prob_next + 1e-8))  # Policy entropy H(pi)
         wall_clock_time = time.time() - start_time
         
+        #Track more refined return + entropy
+        terminal_states = mdp.terminal_mask
+        non_terminal_states = ~terminal_states
+        
+        average_return = V_next[non_terminal_states].mean()
+        entropy_non_terminal = -np.sum(pi_prob_next[non_terminal_states] * np.log(pi_prob_next[non_terminal_states] + 1e-8))
+        if np.sum(non_terminal_states) == 0:
+            average_entropy = 0.0
+        else:
+            average_entropy = entropy_non_terminal / np.sum(non_terminal_states)
+        
         logs.append({
             "i": i,
             "delta": delta,
             "bellman_residual": delta,
             "policy_l1_change": policy_l1_change,
             "entropy": entropy,
+            "average_entropy": average_entropy,
+            "average_return": average_return,
             "wall_clock_time": wall_clock_time,
             "iter": int(i),
             "algo": "soft_vi",

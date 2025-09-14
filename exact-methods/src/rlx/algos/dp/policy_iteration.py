@@ -121,6 +121,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
         
         policy_l1_change = np.sum(pi_next != pi).item()     # Number of states with policy change
         pi = pi_next
+        
         # Monitoring metrics
         wall_clock_time = time.time() - start_time
         
@@ -128,6 +129,12 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
         total_eval_backups = inner_iter * num_states
         improvement_backups = num_states * mdp.P.shape[1]  # num_actions
         backup_count = total_eval_backups + improvement_backups
+        
+        #Track more refined return
+        terminal_states = mdp.terminal_mask
+        non_terminal_states = ~terminal_states
+        
+        average_return = V[non_terminal_states].mean()
         
         logs.append({
             "outer_iter": outer_iter,
@@ -138,6 +145,7 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
             "entropy": 0.0,                                # Always 0.0 for deterministic PI policy
             "wall_clock_time": wall_clock_time,
             "bellman_backups": backup_count,
+            "average_return": float(average_return),
             # Standardized fields across algorithms
             "iter": int(outer_iter),
             "algo": "pi",
