@@ -23,6 +23,7 @@ from rlx.algos.dp.policy_iteration import run_pi
 
 
 #https://chatgpt.com/c/68b962cb-f4f4-8321-8588-9fd4858270ca
+#https://chatgpt.com/c/68c6812b-f2bc-8320-8eb2-5ab63b414483 ⭐
 
 def soft_vi():
     print("=============== SOFT VI =============== ")
@@ -34,7 +35,7 @@ def soft_vi():
         f"Built 4-room MDP with shape={shape}, states={mdp.P.shape[0]}, actions={mdp.P.shape[1]}"
     )
     # tau = 1e-6
-    tau = 0.01
+    tau = 0.1
     tol = 1e-8
     # tol = 1e-5
     max_iters = 1000
@@ -51,6 +52,8 @@ def soft_vi():
     average_entropy = [log["average_entropy"] for log in logs]
     average_return = [log["average_return"] for log in logs]
     
+    # plt.plot(average_entropy)
+    # plt.plot(entropy)
     plt.plot(average_return)
     plt.title(f"Iterations vs Entropy (tau={tau}); Env config: gamma={mdp.gamma}, slip={slip}, step_penalty={step_penalty}")
     plt.xlabel("Iterations")
