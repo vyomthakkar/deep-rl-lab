@@ -15,7 +15,13 @@ def soft_bellman_backup(V, P, R, gamma, tau):
     log(sum_a exp(x_a)) = max_a(x_a) + log(sum_a exp(x_a - max_a(x_a)))
     
     Note: P[s,a,s'] = P(s'|s,a)
-
+    
+    "LSE (log-sum-exp) is always between max(Q) and max(Q) + tau*log|A|. If actions have similar Q-values (Qs close), LSE ~ max(Q) + tau*log|A|. Thus each Bellman backup adds the constant tau*log|A| on top of the hard max."
+    
+    Note: Max-entropy formulation adds a tau*log||A|| term to the value function, where A is the set of all actions. over the infinte horizon, this term becomes tau*log||A||/(1-gamma)!
+          In order to discount this tau*log||A|| term, we can subtract tau*log||A||/(1-gamma) from the value function at the final step and "center" the value function.
+          https://chatgpt.com/c/68c79442-f608-8330-b34a-542a56fe7eb5
+          
     Args:
         V: Array of state values, shape (S,).
         P: Transition probabilities per (s, a, s'), shape (S, A, S).

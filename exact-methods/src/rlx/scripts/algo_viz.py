@@ -1321,28 +1321,71 @@ def compute_softvi_return(mdp, V):
 def softness_and_entropy():
     
     tau_grid = np.linspace(0.01, 1.0, 10)
-    return_grid = []
-    entropy_grid = []
+    return_grid = []            # Soft value (includes entropy bonus)
+    return_centered_grid = []   # Soft value centered by tau*log|A|/(1-gamma)
+    entropy_grid = []           # Average policy entropy
     
     gamma = 0.99
-    slip = 0.0
+    slip = 0.3
     tol = 1e-8
     max_iters = 1000
     
     for tau in tau_grid:
-        mdp = build_4room(gamma=gamma, slip=slip, step_penalty=-0.1)
+        mdp = build_4room(gamma=gamma, slip=slip, step_penalty=-0.01)
         result = run_soft_vi(mdp, tau=tau, tol=tol, max_iters=max_iters, logger=None)
-        average_return = compute_softvi_return(mdp, result["V"])
-        final_entropy = result["logs"][-1].get("entropy", 0.0)
-        print(f"tau: {tau}, average_return: {average_return}, average_entropy: {final_entropy}")
-        return_grid.append(average_return)
-        entropy_grid.append(final_entropy)
+        final_log = result["logs"][-1]
+        avg_return = float(final_log.get("average_return", 0.0))
+        avg_entropy = float(final_log.get("average_entropy", 0.0))
+        baseline = tau * np.log(mdp.P.shape[1]) / (1.0 - gamma)
+        avg_return_centered = avg_return - baseline
         
-    # plt.plot(tau_grid, return_grid, label="Average Return")
-    plt.plot(tau_grid, entropy_grid, label="Entropy")
-    plt.legend()
+        print(f"tau={tau:.3f} | avg_return={avg_return:.4f} | centered={avg_return_centered:.4f} | avg_entropy={avg_entropy:.4f}")
+        
+        return_grid.append(avg_return)
+        return_centered_grid.append(avg_return_centered)
+        entropy_grid.append(avg_entropy)
+    
+    # As tau -> 0 check against hard VI
+    mdp_ref = build_4room(gamma=gamma, slip=slip, step_penalty=0.0)
+    vi_result = run_vi(mdp_ref, tol=tol, max_iters=max_iters, logger=None)
+    V_vi = vi_result["V"]
+    tau_small = 1e-7
+    svi_small = run_soft_vi(mdp_ref, tau=tau_small, tol=tol, max_iters=max_iters, logger=None)
+    V_soft_small = svi_small["V"]
+    sup_norm = float(np.max(np.abs(V_soft_small - V_vi)))
+    print(f"As tau->0 check: ||V_soft - V_hard||_inf = {sup_norm:.2e} (tau={tau_small})")
+    if sup_norm > 1e-4:
+        print("Warning: difference exceeds 1e-4; consider smaller tau or tighter tol.")
+    
+    # Plots: three panels — uncentered return, centered return, entropy
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    
+    # Uncentered return (soft value)
+    axes[0].plot(tau_grid, return_grid, label="Avg soft value")
+    axes[0].set_xlabel("Tau (temperature)")
+    axes[0].set_ylabel("Average value")
+    axes[0].set_title(f"Uncentered return vs Tau (gamma={gamma}, slip={slip})")
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    # Centered return
+    axes[1].plot(tau_grid, return_centered_grid, label="Centered avg value", color="tab:green")
+    axes[1].set_xlabel("Tau (temperature)")
+    axes[1].set_ylabel("Centered value")
+    axes[1].set_title("Centered return vs Tau")
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    # Entropy
+    axes[2].plot(tau_grid, entropy_grid, label="Avg policy entropy", color="tab:orange")
+    axes[2].set_xlabel("Tau (temperature)")
+    axes[2].set_ylabel("Entropy")
+    axes[2].set_title("Entropy vs Tau")
+    axes[2].legend()
+    axes[2].grid(True)
+    
+    plt.tight_layout()
     plt.show()
-        
     
     return return_grid, entropy_grid
 
@@ -1352,7 +1395,7 @@ if __name__ == "__main__":
     # RESEARCH-GRADE ABLATION STUDY
     # ================================
     
-    soft_vi()
+    # soft_vi()
     
     # Uncomment individual functions for testing:
     # convergence_curves()
@@ -1361,7 +1404,7 @@ if __name__ == "__main__":
     # vi_vs_vi_optimized()
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
-    # softness_and_entropy()
+    softness_and_entropy()
     
     # # Run complete professional ablation study
     # print("🚀 Running Professional Ablation Study Pipeline\n")
