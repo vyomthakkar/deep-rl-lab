@@ -1390,6 +1390,110 @@ def softness_and_entropy():
     return return_grid, entropy_grid
 
 
+# C.5 Reward Shaping Sanity
+# 
+# Add step penalty c∈{0, 0.01, 0.05}. Show optimal policy invariance under potential-based shaping (brief demo: subtract a potential Φ(s) to keep argmax unchanged).
+# 
+def reward_shaping_sanity():
+    """
+    C.5: Reward Shaping Sanity (scaffold only; no solution code).
+
+    What to demonstrate:
+    - Part A (episodic): Explore how the optimal greedy policy changes with a per-step term c in {0, 0.01, 0.05}.
+      In an episodic setup with absorbing terminals and a “living cost” applied only before termination,
+      changing c can change the optimal policy (no invariance guarantee).
+    - Part B (potential-based shaping): For a fixed base MDP, shape rewards with
+        r'(s,a,s') = r(s,a,s') + γ Φ(s') − Φ(s)
+      and verify the greedy policy is unchanged.
+
+    Important nuance about “constant shift invariance”:
+    - The classic constant-addition invariance holds for a continuing MDP where the same constant is added at every timestep forever
+      (including the absorbing terminal self-loop). Then one can set Φ(s) = c/(1−γ), which yields Q*'(s,a) = Q*(s,a) − Φ(s),
+      keeping argmax unchanged.
+    - In the usual episodic “living cost” formulation (penalty applied only until termination), the extra term depends on episode length T,
+      so the optimal policy can change.
+    - Caveats: If the horizon T is fixed for all policies, constant-addition still preserves argmax. With γ=1 and variable horizons,
+      even adding c on the final step does not, in general, preserve argmax.
+    """
+
+    # --- Suggested hyperparameters (feel free to tweak) ---
+    gamma = 0.99
+    slip = 0.1
+    step_penalties = [0.0, 0.01, 0.05]  # interpret as magnitudes; you may use [-c for c in ...] to make them penalties
+    seed = 0
+
+    # --- Part A: Effect of step penalty c (episodic) ---
+    # Goal: Explore π*_VI across c; do not expect invariance in this living-cost setup.
+    #
+    # TODO(human): for each c in step_penalties
+    #   - Decide on the sign convention. If treating as penalties, set c_use = -c. Otherwise justify using +c.
+    #   - Build base MDP: mdp_c = build_4room(gamma=gamma, slip=slip, step_penalty=c_use, seed=seed)
+    #   - Run VI to convergence: result_c = run_vi(mdp_c, tol=1e-8, max_iters=1000, logger=None)
+    #   - Extract policy: pi_c = result_c["pi"] and store in a list in the same order as step_penalties
+    #
+    pi_list = []
+    for c in step_penalties:
+        mdp_c = build_4room(gamma=gamma, slip=slip, step_penalty=c, seed=seed)
+        result_c = run_vi(mdp_c, tol=1e-8, max_iters=1000, logger=None)
+        pi_c = result_c["pi"]
+        pi_list.append(pi_c)
+        print(f"c={c} | pi_c={pi_c}")
+    
+    # TODO(human): Compare all stored policies pairwise and report agreement instead of asserting equality.
+    #   Rationale: In episodic tasks with absorbing terminals and per-step penalties/bonuses, changing c can
+    #   legitimately change the optimal policy. So we produce a descriptive report here.
+    if len(pi_list) > 1:
+        num_states = len(pi_list[0])
+        print("\n--- Policy agreement across c (descriptive) ---")
+        for i in range(len(step_penalties)):
+            for j in range(i+1, len(step_penalties)):
+                matches = int(np.sum(pi_list[i] == pi_list[j]))
+                pct = 100.0 * matches / num_states if num_states > 0 else float('nan')
+                print(f"c={step_penalties[i]} vs c={step_penalties[j]}: {matches}/{num_states} states match ({pct:.1f}%)")
+        print("(Note) Different c may change optimal behavior in this episodic setting; this is an exploration, not an invariance test.")
+
+    # --- Optional: Continuing MDP invariance demo ---
+    # Summary: If c is added every timestep forever (including terminal self-loops), the optimal policy should be invariant across c.
+    # TODO(human): Create a 'continuing' variant by ensuring terminal self-loops also yield the same per-step constant.
+    # TODO(human): Rerun VI for multiple c and confirm policies match exactly across c.
+    # TODO(human): Optionally verify Q*'(s,a) = Q*(s,a) − Φ(s) with Φ(s) = c/(1−γ) by checking that Q-values shift by a
+    #             state-dependent constant while greedy argmax remains unchanged.
+
+    # --- Part B: Potential-based shaping invariance ---
+    # Goal: Pick ONE of the above mdp_c (e.g., the first one) and create a shaped MDP with rewards
+    #       R'_exp(s,a) = R_exp(s,a) + γ E_{s'|s,a}[Φ(s')] − Φ(s), then verify the optimal policy matches.
+    #
+    # Guidance for Φ(s):
+    #   - A simple choice is proportional to negative Manhattan distance to the goal location.
+    #   - You can recover (r,c) for each state index i using mdp.extras["shape"] and mdp.state_names (or track idx_to_rc inside builder if you extend it).
+    #   - Set Φ(goal)=0 (common choice); you may also set Φ(terminal)=0 for all terminals.
+    #
+    # TODO(human): Choose a specific mdp_base (e.g., c_use corresponding to c=0.01) and compute a vector phi of shape (S,).
+    #   Example plan (no code here):
+    #     - Create phi[i] based on the grid coordinate of state i.
+    #     - Ensure terminals have phi=0 to avoid surprises in absorbing states.
+    #
+    # TODO(human): Compute the shaping term for every (s,a):
+    #   F_exp[s,a] = gamma * sum_s' P[s,a,s'] * phi[s'] - phi[s]
+    #   Then set R_shaped = R + F_exp (matching shapes (S,A)).
+    #   Note: Our TabularMDP uses expected immediate reward R(s,a), so you add the EXPECTED shaping term as above.
+    #
+    # TODO(human): Build a shaped MDP identical to mdp_base but with R' = R_shaped, then run VI again:
+    #   result_shaped = run_vi(mdp_shaped, tol=1e-8, max_iters=1000, logger=None)
+    #   pi_shaped = result_shaped["pi"]
+    #
+    # TODO(human): Verify potential-based shaping invariance:
+    #   - Compare pi_shaped to the unshaped base policy from the same mdp_base. They should match exactly.
+    #   - Print mismatch count (should be 0) and optionally visualize policies.
+
+    # Optional diagnostics and visuals (if you want):
+    #   - Show that values V differ by a state-dependent offset induced by Φ, while greedy actions are unchanged.
+    #   - Plot a small quiver/policy map before/after shaping for a quick sanity check.
+
+    # NOTE: Part B remains as TODO(human). Function ends after Part A report so it can be run as-is.
+    return
+
+
 if __name__ == "__main__":
     # ================================
     # RESEARCH-GRADE ABLATION STUDY
@@ -1404,7 +1508,8 @@ if __name__ == "__main__":
     # vi_vs_vi_optimized()
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
-    softness_and_entropy()
+    # softness_and_entropy()
+    reward_shaping_sanity()
     
     # # Run complete professional ablation study
     # print("🚀 Running Professional Ablation Study Pipeline\n")
