@@ -1433,7 +1433,7 @@ def reward_shaping_sanity():
     #
     pi_list = []
     for c in step_penalties:
-        mdp_c = build_4room(gamma=gamma, slip=slip, step_penalty=c, seed=seed)
+        mdp_c = build_4room(gamma=gamma, slip=slip, step_penalty=-c, seed=seed)
         result_c = run_vi(mdp_c, tol=1e-8, max_iters=1000, logger=None)
         pi_c = result_c["pi"]
         pi_list.append(pi_c)
