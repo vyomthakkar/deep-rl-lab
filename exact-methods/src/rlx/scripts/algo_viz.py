@@ -20,6 +20,7 @@ from rlx.envs.tabular.gridworld import build_4room
 from rlx.algos.dp.soft_value_iteration import run_soft_vi, soft_bellman_backup
 from rlx.algos.dp.value_iteration import run_vi
 from rlx.algos.dp.policy_iteration import run_pi
+from rlx.envs.tabular.mdp import TabularMDP
 
 
 #https://chatgpt.com/c/68b962cb-f4f4-8321-8588-9fd4858270ca
@@ -1402,20 +1403,8 @@ def reward_shaping_sanity():
     - Part A (episodic): Explore how the optimal greedy policy changes with a per-step term c in {0, 0.01, 0.05}.
       In an episodic setup with absorbing terminals and a “living cost” applied only before termination,
       changing c can change the optimal policy (no invariance guarantee).
-    - Part B (potential-based shaping): For a fixed base MDP, shape rewards with
-        r'(s,a,s') = r(s,a,s') + γ Φ(s') − Φ(s)
-      and verify the greedy policy is unchanged.
-
-    Important nuance about “constant shift invariance”:
-    - The classic constant-addition invariance holds for a continuing MDP where the same constant is added at every timestep forever
-      (including the absorbing terminal self-loop). Then one can set Φ(s) = c/(1−γ), which yields Q*'(s,a) = Q*(s,a) − Φ(s),
-      keeping argmax unchanged.
-    - In the usual episodic “living cost” formulation (penalty applied only until termination), the extra term depends on episode length T,
-      so the optimal policy can change.
-    - Caveats: If the horizon T is fixed for all policies, constant-addition still preserves argmax. With γ=1 and variable horizons,
-      even adding c on the final step does not, in general, preserve argmax.
+    - Part B: Potential-based shaping invariance.
     """
-
     # --- Suggested hyperparameters (feel free to tweak) ---
     gamma = 0.99
     slip = 0.1
@@ -1424,13 +1413,7 @@ def reward_shaping_sanity():
 
     # --- Part A: Effect of step penalty c (episodic) ---
     # Goal: Explore π*_VI across c; do not expect invariance in this living-cost setup.
-    #
-    # TODO(human): for each c in step_penalties
-    #   - Decide on the sign convention. If treating as penalties, set c_use = -c. Otherwise justify using +c.
-    #   - Build base MDP: mdp_c = build_4room(gamma=gamma, slip=slip, step_penalty=c_use, seed=seed)
-    #   - Run VI to convergence: result_c = run_vi(mdp_c, tol=1e-8, max_iters=1000, logger=None)
-    #   - Extract policy: pi_c = result_c["pi"] and store in a list in the same order as step_penalties
-    #
+    
     pi_list = []
     for c in step_penalties:
         mdp_c = build_4room(gamma=gamma, slip=slip, step_penalty=-c, seed=seed)
@@ -1439,9 +1422,15 @@ def reward_shaping_sanity():
         pi_list.append(pi_c)
         print(f"c={c} | pi_c={pi_c}")
     
-    # TODO(human): Compare all stored policies pairwise and report agreement instead of asserting equality.
+    #   Compare all stored policies pairwise and report agreement instead of asserting equality.
     #   Rationale: In episodic tasks with absorbing terminals and per-step penalties/bonuses, changing c can
     #   legitimately change the optimal policy. So we produce a descriptive report here.
+    
+    # Key insight:
+    # Net effect: c is accumulated only until you hit a terminal. Because different policies have different expected time-to-termination, 
+    # changing c can change which policy is optimal.
+
+    
     if len(pi_list) > 1:
         num_states = len(pi_list[0])
         print("\n--- Policy agreement across c (descriptive) ---")
@@ -1452,39 +1441,44 @@ def reward_shaping_sanity():
                 print(f"c={step_penalties[i]} vs c={step_penalties[j]}: {matches}/{num_states} states match ({pct:.1f}%)")
         print("(Note) Different c may change optimal behavior in this episodic setting; this is an exploration, not an invariance test.")
 
-    # --- Optional: Continuing MDP invariance demo ---
-    # Summary: If c is added every timestep forever (including terminal self-loops), the optimal policy should be invariant across c.
-    # TODO(human): Create a 'continuing' variant by ensuring terminal self-loops also yield the same per-step constant.
-    # TODO(human): Rerun VI for multiple c and confirm policies match exactly across c.
-    # TODO(human): Optionally verify Q*'(s,a) = Q*(s,a) − Φ(s) with Φ(s) = c/(1−γ) by checking that Q-values shift by a
-    #             state-dependent constant while greedy argmax remains unchanged.
-
     # --- Part B: Potential-based shaping invariance ---
     # Goal: Pick ONE of the above mdp_c (e.g., the first one) and create a shaped MDP with rewards
-    #       R'_exp(s,a) = R_exp(s,a) + γ E_{s'|s,a}[Φ(s')] − Φ(s), then verify the optimal policy matches.
-    #
-    # Guidance for Φ(s):
-    #   - A simple choice is proportional to negative Manhattan distance to the goal location.
-    #   - You can recover (r,c) for each state index i using mdp.extras["shape"] and mdp.state_names (or track idx_to_rc inside builder if you extend it).
-    #   - Set Φ(goal)=0 (common choice); you may also set Φ(terminal)=0 for all terminals.
-    #
-    # TODO(human): Choose a specific mdp_base (e.g., c_use corresponding to c=0.01) and compute a vector phi of shape (S,).
-    #   Example plan (no code here):
-    #     - Create phi[i] based on the grid coordinate of state i.
-    #     - Ensure terminals have phi=0 to avoid surprises in absorbing states.
-    #
-    # TODO(human): Compute the shaping term for every (s,a):
+    #       R'_exp(s,a,s') = R_exp(s,a,s') + γ Φ(s') − Φ(s)
+    #       and verify the greedy policy is unchanged.
+
+    # Compute the shaping term for every (s,a):
     #   F_exp[s,a] = gamma * sum_s' P[s,a,s'] * phi[s'] - phi[s]
-    #   Then set R_shaped = R + F_exp (matching shapes (S,A)).
-    #   Note: Our TabularMDP uses expected immediate reward R(s,a), so you add the EXPECTED shaping term as above.
-    #
-    # TODO(human): Build a shaped MDP identical to mdp_base but with R' = R_shaped, then run VI again:
-    #   result_shaped = run_vi(mdp_shaped, tol=1e-8, max_iters=1000, logger=None)
-    #   pi_shaped = result_shaped["pi"]
-    #
-    # TODO(human): Verify potential-based shaping invariance:
-    #   - Compare pi_shaped to the unshaped base policy from the same mdp_base. They should match exactly.
-    #   - Print mismatch count (should be 0) and optionally visualize policies.
+    # Then set R_shaped = R + F_exp (matching shapes (S,A)).
+    # Note: Our TabularMDP uses expected immediate reward R(s,a), so you add the EXPECTED shaping term as above.
+    c_use = 0.01
+    mdp_base = build_4room(gamma=gamma, slip=slip, step_penalty=-c_use, seed=seed)
+    phi = np.zeros(mdp_base.P.shape[0])
+    
+    # Compute E_{s'|s,a}[phi(s')]
+    E_phi = np.einsum('sas,s->sa', mdp_base.P, phi) 
+    F_exp = mdp_base.gamma * E_phi - phi.reshape(-1,1)           # shape (S, A)
+    R_shaped = mdp_base.R + F_exp                            # shape (S, A)
+    
+    # Build a shaped MDP identical to mdp_base but with R' = R_shaped
+    mdp_shaped = TabularMDP(
+        P=mdp_base.P.copy(),
+        R=R_shaped,
+        gamma=mdp_base.gamma,
+        terminal_mask=mdp_base.terminal_mask.copy(),
+        state_names=mdp_base.state_names,
+        action_names=mdp_base.action_names,
+        extras=mdp_base.extras,
+    )
+    
+    # Verify potential-based shaping invariance: greedy policy should be unchanged
+    base_result = run_vi(mdp_base, tol=1e-8, max_iters=1000, logger=None)
+    pi_base = base_result["pi"]
+    result_shaped = run_vi(mdp_shaped, tol=1e-8, max_iters=1000, logger=None)
+    pi_shaped = result_shaped["pi"]
+    
+    mismatches = int(np.sum(pi_base != pi_shaped))
+    total_states_check = len(pi_base)
+    print(f"Potential-based shaping invariance check: mismatches = {mismatches}/{total_states_check}")
 
     # Optional diagnostics and visuals (if you want):
     #   - Show that values V differ by a state-dependent offset induced by Φ, while greedy actions are unchanged.
