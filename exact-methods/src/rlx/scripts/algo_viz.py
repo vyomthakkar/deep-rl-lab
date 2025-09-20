@@ -10,6 +10,8 @@ from scipy import stats
 from scipy.stats import mannwhitneyu, ttest_ind
 import json
 
+
+
 # Ensure 'src' is on sys.path when running this file directly
 _ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 _SRC_DIR = os.path.join(_ROOT_DIR, "src")
@@ -1391,6 +1393,52 @@ def softness_and_entropy():
     return return_grid, entropy_grid
 
 
+def negative_manhattan(mdp):
+    """
+    Compute a potential function φ(s) = -min_t Manhattan_distance(s, t) for all terminals t.
+    
+    This creates a potential suitable for reward shaping that:
+    - Has higher values (less negative) closer to any terminal state
+    - Sets φ = 0 for all terminal states (required for proper shaping)
+    - Preserves policy invariance when used in potential-based reward shaping
+    
+    Args:
+        mdp: TabularMDP with state_names in format "(r,c)" and terminal_mask
+        
+    Returns:
+        np.ndarray: Potential vector φ of shape (S,), dtype float
+        
+    Raises:
+        ValueError: If no terminal states are found in the MDP
+    """
+    # Parse state coordinates from string names like "(1,2)" -> (1, 2)
+    state_coords = np.array(
+        [tuple(map(int, name.strip("()").split(","))) for name in mdp.state_names],
+        dtype=int
+    )
+    
+    # Extract coordinates of terminal states only
+    terminal_coords = state_coords[mdp.terminal_mask]
+    if terminal_coords.size == 0:
+        raise ValueError("negative_manhattan: No terminal states found in the MDP.")
+
+    # Compute pairwise Manhattan distances: |r1-r2| + |c1-c2|
+    # Broadcasting: (S,1,2) - (1,T,2) -> (S,T,2) -> sum -> (S,T)
+    dists = np.abs(state_coords[:,np.newaxis,:] - terminal_coords[np.newaxis,:,:]).sum(axis=2)
+    
+    # Find distance to nearest terminal for each state
+    nearest = dists.min(axis=1)  # Shape: (S,)
+    
+    # Create potential: negative distance (higher potential closer to terminals)
+    phi = -nearest.astype(float)
+    
+    # Critical: set terminal states to zero potential for proper shaping
+    phi[mdp.terminal_mask] = 0.0
+    
+    return phi
+    
+
+
 # C.5 Reward Shaping Sanity
 # 
 # Add step penalty c∈{0, 0.01, 0.05}. Show optimal policy invariance under potential-based shaping (brief demo: subtract a potential Φ(s) to keep argmax unchanged).
@@ -1503,7 +1551,8 @@ if __name__ == "__main__":
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
     # softness_and_entropy()
-    reward_shaping_sanity()
+    # reward_shaping_sanity()
+    negative_manhattan()
     
     # # Run complete professional ablation study
     # print("🚀 Running Professional Ablation Study Pipeline\n")
