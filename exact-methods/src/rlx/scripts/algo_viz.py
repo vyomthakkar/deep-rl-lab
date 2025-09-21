@@ -1548,6 +1548,85 @@ def reward_shaping_sanity():
     return
 
 
+def reward_shaping_invariance_over_c():
+    """
+    Demonstrate that for each fixed step penalty c, potential-based shaping
+    preserves the greedy policy (argmax invariance), even though changing c
+    itself may change the optimal policy across different MDPs.
+
+    For c in {0.0, 0.01, 0.05}, we:
+      1) Build the 4-room MDP with step_penalty = -c.
+      2) Construct shaped rewards R' = R + (γ P @ φ − φ), with φ = negative_manhattan(mdp).
+      3) Run VI on both base and shaped MDPs with tight tolerance.
+      4) Verify policy invariance per c and check the Q-identity: Q' ≈ Q − φ.
+
+    Note: This does NOT claim invariance across different c values. In episodic
+    tasks where step penalties are applied only until termination, changing c
+    legitimately changes the optimal policy.
+    """
+    gamma = 0.99
+    slip = 0.1
+    step_penalties = [0.0, 0.01, 0.05]
+    seed = 0
+    pi_list = []
+    Q_list = []
+
+    print("\n=== Reward Shaping Invariance per-c (VI) ===")
+    for c in step_penalties:
+        mdp = build_4room(gamma=gamma, slip=slip, step_penalty=-c, seed=seed)
+        phi = negative_manhattan(mdp)
+        E_phi = mdp.P @ phi
+        F_exp = mdp.gamma * E_phi - phi.reshape(-1, 1)
+        R_shaped = mdp.R + F_exp
+
+        mdp_shaped = TabularMDP(
+            P=mdp.P.copy(),
+            R=R_shaped,
+            gamma=mdp.gamma,
+            terminal_mask=mdp.terminal_mask.copy(),
+            state_names=mdp.state_names,
+            action_names=mdp.action_names,
+            extras=mdp.extras,
+        )
+
+        base = run_vi(mdp, tol=1e-12, max_iters=5000, logger=None, use_optimizations=True)
+        shaped = run_vi(mdp_shaped, tol=1e-12, max_iters=5000, logger=None, use_optimizations=True)
+
+        pi_base = base["pi"]
+        pi_shaped = shaped["pi"]
+        Q_base = base["Q"]
+        Q_shaped = shaped["Q"]
+
+        S = len(pi_base)
+        mismatches_pi = int(np.sum(pi_base != pi_shaped))
+        mismatches_from_Q = int(np.sum(Q_base.argmax(axis=1) != Q_shaped.argmax(axis=1)))
+        max_abs_Q_identity = float(np.max(np.abs(Q_shaped - (Q_base - phi[:, None]))))
+
+        print(
+            f"c={c:.3f} | mismatches(pi)={mismatches_pi}/{S}, "
+            f"mismatches_from_Q={mismatches_from_Q}/{S}, "
+            f"max|Q'-(Q-phi)|={max_abs_Q_identity:.2e}"
+        )
+        pi_list.append(pi_shaped)
+        Q_list.append(Q_shaped)
+        
+    print("\n--- Policy agreement across c (descriptive) ---")
+    for i in range(len(step_penalties)):
+        for j in range(i+1, len(step_penalties)):
+            matches = int(np.sum(pi_list[i] == pi_list[j]))
+            pct = 100.0 * matches / S if S > 0 else float('nan')
+            print(f"c={step_penalties[i]} vs c={step_penalties[j]}: {matches}/{S} states match ({pct:.1f}%)")
+            print(f"{pi_list[i][pi_list[i] != pi_list[j]]=}")
+            print(f"{pi_list[j][pi_list[i] != pi_list[j]]=}")
+            print(f"{Q_list[i][pi_list[i] != pi_list[j]]=}")
+            print(f"{Q_list[j][pi_list[i] != pi_list[j]]=}")
+            
+            
+            
+    print("(Note) Different c may change optimal behavior in this episodic setting; this is an exploration, not an invariance test.")
+
+    print("(Note) Invariance is guaranteed per c (original vs shaped). Across different c, policies may differ in this episodic setup.")
+
 if __name__ == "__main__":
     # ================================
     # RESEARCH-GRADE ABLATION STUDY
@@ -1563,8 +1642,9 @@ if __name__ == "__main__":
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
     # softness_and_entropy()
-    reward_shaping_sanity()
+    # reward_shaping_sanity()
     # negative_manhattan()
+    reward_shaping_invariance_over_c()
     
     # # Run complete professional ablation study
     # print("🚀 Running Professional Ablation Study Pipeline\n")
