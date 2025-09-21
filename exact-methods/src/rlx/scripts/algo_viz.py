@@ -1500,10 +1500,15 @@ def reward_shaping_sanity():
     # Note: Our TabularMDP uses expected immediate reward R(s,a), so you add the EXPECTED shaping term as above.
     c_use = 0.01
     mdp_base = build_4room(gamma=gamma, slip=slip, step_penalty=-c_use, seed=seed)
-    phi = np.zeros(mdp_base.P.shape[0])
+    # phi = np.zeros(mdp_base.P.shape[0])
+    phi = negative_manhattan(mdp_base)
+    print(f"{phi=}")
     
     # Compute E_{s'|s,a}[phi(s')]
-    E_phi = np.einsum('sas,s->sa', mdp_base.P, phi) 
+    # IMPORTANT: sum over next-state dimension only. Using einsum('sas,s->sa')
+    # would erroneously take the diagonal P[s,a,s]. The correct contraction is
+    # equivalent to value_iteration's EV = P @ V.
+    E_phi = mdp_base.P @ phi
     F_exp = mdp_base.gamma * E_phi - phi.reshape(-1,1)           # shape (S, A)
     R_shaped = mdp_base.R + F_exp                            # shape (S, A)
     
@@ -1521,12 +1526,19 @@ def reward_shaping_sanity():
     # Verify potential-based shaping invariance: greedy policy should be unchanged
     base_result = run_vi(mdp_base, tol=1e-8, max_iters=1000, logger=None)
     pi_base = base_result["pi"]
+    Q_base = base_result["Q"]
     result_shaped = run_vi(mdp_shaped, tol=1e-8, max_iters=1000, logger=None)
     pi_shaped = result_shaped["pi"]
+    Q_shaped = result_shaped["Q"]
+    
+    print(f"{pi_base=}")
+    print(f"{pi_shaped=}")
     
     mismatches = int(np.sum(pi_base != pi_shaped))
     total_states_check = len(pi_base)
     print(f"Potential-based shaping invariance check: mismatches = {mismatches}/{total_states_check}")
+    
+    
 
     # Optional diagnostics and visuals (if you want):
     #   - Show that values V differ by a state-dependent offset induced by Φ, while greedy actions are unchanged.
@@ -1551,8 +1563,8 @@ if __name__ == "__main__":
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
     # softness_and_entropy()
-    # reward_shaping_sanity()
-    negative_manhattan()
+    reward_shaping_sanity()
+    # negative_manhattan()
     
     # # Run complete professional ablation study
     # print("🚀 Running Professional Ablation Study Pipeline\n")
