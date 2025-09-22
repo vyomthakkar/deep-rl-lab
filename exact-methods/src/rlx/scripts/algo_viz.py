@@ -175,7 +175,14 @@ def convergence_curves():
         else:
             print(f"Warning: {title} has zero standard deviation - no shading will be visible")
         ax.set_xlabel("Iterations")
-        ax.set_ylabel("Value")
+        # Set appropriate y-label based on what we're measuring
+        if "Policy Change" in title:
+            if "# states changed" in title:
+                ax.set_ylabel("Number of States")
+            else:
+                ax.set_ylabel("L1 Distance")
+        else:
+            ax.set_ylabel("Bellman Residual")
         ax.set_title(f"{title} vs. Iteration")
         ax.legend()
         ax.grid(True)
@@ -185,7 +192,7 @@ def convergence_curves():
 
     process_and_plot(vi_deltas_seeds, 'VI ||V_{k+1}-V_k||∞', axes[0, 0])
     process_and_plot(soft_vi_deltas_seeds, 'Soft-VI ||V_{k+1}-V_k||∞', axes[0, 1])
-    process_and_plot(vi_policy_changes_seeds, 'VI Policy Change ||π_{k+1}-π_k||₁', axes[1, 0])
+    process_and_plot(vi_policy_changes_seeds, 'VI Policy Change (# states changed)', axes[1, 0])
     process_and_plot(soft_vi_policy_changes_seeds, 'Soft-VI Policy Change ||π_{k+1}-π_k||₁', axes[1, 1])
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -1538,13 +1545,6 @@ def reward_shaping_sanity():
     total_states_check = len(pi_base)
     print(f"Potential-based shaping invariance check: mismatches = {mismatches}/{total_states_check}")
     
-    
-
-    # Optional diagnostics and visuals (if you want):
-    #   - Show that values V differ by a state-dependent offset induced by Φ, while greedy actions are unchanged.
-    #   - Plot a small quiver/policy map before/after shaping for a quick sanity check.
-
-    # NOTE: Part B remains as TODO(human). Function ends after Part A report so it can be run as-is.
     return
 
 
@@ -1635,7 +1635,7 @@ if __name__ == "__main__":
     # soft_vi()
     
     # Uncomment individual functions for testing:
-    # convergence_curves()
+    convergence_curves()
     # vi_pi_agreement()  
     # gamma_slip_sensitivity()
     # vi_vs_vi_optimized()
@@ -1644,7 +1644,7 @@ if __name__ == "__main__":
     # softness_and_entropy()
     # reward_shaping_sanity()
     # negative_manhattan()
-    reward_shaping_invariance_over_c()
+    # reward_shaping_invariance_over_c()
     
     # # Run complete professional ablation study
     # print("🚀 Running Professional Ablation Study Pipeline\n")
