@@ -39,8 +39,46 @@ def policy_evaluation_sweep(pi, V, P, R, gamma):
     
             
 
+def policy_evaluation_linear_solve(pi, P, R, gamma):
+    """Exact policy evaluation via linear solve.
 
-def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations: bool = False, opt_config: dict = {}) -> dict: 
+    Solves (I - gamma * P_pi) V = R_pi for V, where P_pi[s, s'] = P[s, pi[s], s']
+    and R_pi[s] = R[s, pi[s]]. Returns V and the policy-evaluation residual
+    ||T_pi V - V||_inf computed post-solve.
+
+    Args:
+        pi: Integer array of shape (S,) with action indices per state.
+        P: Float array of shape (S, A, S), row-stochastic transitions.
+        R: Float array of shape (S, A), expected immediate rewards.
+        gamma: Discount factor in [0, 1).
+
+    Returns:
+        V: Float array of shape (S,) solving the linear system.
+        delta: Float, policy-evaluation residual ||T_pi V - V||_inf.
+    """
+    num_states = P.shape[0]
+    rows = np.arange(num_states)
+
+    # Construct policy-specific dynamics and rewards
+    P_pi = P[rows, pi, :]                                   # shape: (S, S)
+    R_pi = R[rows, pi]                                      # shape: (S,)
+
+    # Solve the linear system (I - gamma P_pi) V = R_pi
+    A = np.eye(num_states, dtype=np.float64) - gamma * P_pi
+    b = R_pi
+    V = np.linalg.solve(A, b)
+
+    # Compute residual ||T_pi V - V||_inf for logging
+    EV = P @ V                                              # shape: (S, A)
+    Q = R + gamma * EV
+    V_tp = Q[rows, pi]
+    delta = np.max(np.abs(V_tp - V)).item()
+
+    return V, delta
+
+
+
+def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations: bool = False, opt_config: dict = {}, use_linear_solve_eval: bool = False) -> dict: 
     """Deterministic Policy Iteration (PI) for tabular MDPs.
 
     Procedure:
@@ -56,6 +94,8 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
         eval_tol: Convergence threshold for the policy-evaluation residual.
         max_eval_iters: Maximum evaluation sweeps per outer PI iteration.
         logger: Optional logger with .info(str) for progress logs.
+        use_linear_solve_eval: If True, evaluate the policy exactly in one step
+            by solving (I - gamma P_pi) V = R_pi instead of doing Jacobi sweeps.
 
     Returns:
         A dict with:
@@ -98,13 +138,18 @@ def run_pi(mdp, eval_tol: float, max_eval_iters: int, logger, use_optimizations:
     while policy_l1_change != 0:
         # Policy evaluation phase
         inner_iter = 0
-        for _ in range(max_eval_iters):
-            V_next = policy_evaluation_sweep(pi, V, mdp.P, mdp.R, mdp.gamma)
-            delta = np.max(np.abs(V_next - V)).item()       # Policy evaluation residual
-            V = V_next
-            inner_iter += 1
-            if delta < eval_tol:
-                break
+        if use_linear_solve_eval:
+            # Exact evaluation via linear solve
+            V, delta = policy_evaluation_linear_solve(pi, mdp.P, mdp.R, mdp.gamma)
+            # No Jacobi sweeps performed; inner_iter stays 0
+        else:
+            for _ in range(max_eval_iters):
+                V_next = policy_evaluation_sweep(pi, V, mdp.P, mdp.R, mdp.gamma)
+                delta = np.max(np.abs(V_next - V)).item()   # Policy evaluation residual
+                V = V_next
+                inner_iter += 1
+                if delta < eval_tol:
+                    break
             
         # Policy improvement phase
         EV = mdp.P @ V                                      # shape: (S, A)

@@ -100,7 +100,7 @@ def vi():
 ###
 def convergence_curves():
     # --- Hyperparameters ---
-    tau = 0.1
+    tau = 0.01
     tol = 1e-5
     max_iters = 1000
     gamma = 0.99
@@ -334,7 +334,15 @@ def gamma_slip_sensitivity():
         
         # --- Policy Iteration ---
         print("Running Policy Iteration...")
-        pi_result = run_pi(mdp, eval_tol=eval_tol, max_eval_iters=max_eval_iters, logger=None, use_optimizations=True)
+        pi_result = run_pi(
+            mdp,
+            eval_tol=eval_tol,
+            max_eval_iters=max_eval_iters,
+            logger=None,
+            use_optimizations=True,
+            opt_config={"howards_improvement": True, "greedy_init": False},
+            use_linear_solve_eval=True,
+        )
         pi_iters = len(pi_result['logs'])  # outer iterations
         pi_converged = pi_result['converged']
         pi_time = pi_result['run_time']
@@ -1635,9 +1643,9 @@ if __name__ == "__main__":
     # soft_vi()
     
     # Uncomment individual functions for testing:
-    convergence_curves()
+    # convergence_curves()
     # vi_pi_agreement()  
-    # gamma_slip_sensitivity()
+    gamma_slip_sensitivity()
     # vi_vs_vi_optimized()
     # debug_vi_pi_convergence()
     # pi_vs_pi_optimized()
